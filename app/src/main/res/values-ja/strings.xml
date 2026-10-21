@@ -521,4 +521,23 @@
     <string name="model_storage_name_clash">Download フォルダは大文字と小文字を区別しないため、次の名前が他のモデルや埋め込みを上書きしてしまいます: %1$s。先に名前を変更するか削除してください。</string>
     <string name="model_storage_conflict">%1$s には既に %2$s があります。どちらかを削除してから、もう一度お試しください。</string>
     <string name="model_storage_moving_blocked">モデルを移動中です。移動が終わってからもう一度お試しください。</string>
+    <string name="param_decrease">減らす</string>
+    <string name="param_increase">増やす</string>
+    <string name="param_value_range">範囲：%1$s〜%2$s</string>
+    <string name="cfg_rescale">CFG リスケール：%.2f</string>
+    <string name="cfg_cutoff">ステップの %d%% 以降はネガティブプロンプトをスキップ</string>
+    <string name="cfg_cutoff_off">ネガティブプロンプトのスキップ：オフ</string>
+    <string name="prompt_templates">プロンプトテンプレート</string>
+    <string name="prompt_templates_empty">テンプレートはまだありません。下で現在のプロンプトを保存できます。</string>
+    <string name="prompt_template_name">テンプレート名</string>
+    <string name="prompt_template_save_hint">現在のプロンプトとネガティブプロンプトを保存します</string>
+    <string name="prompt_template_overwrite">同じ名前のテンプレートを置き換えます</string>
+    <string name="prompt_template_save">現在の内容を保存</string>
+    <string name="prompt_template_delete_confirm">テンプレート「%1$s」を削除しますか？</string>
+    <string name="prompt_template_append">追加</string>
+    <string name="prompt_template_use">使用</string>
+    <string name="approx_preview">高速プレビュー（近似）</string>
+    <string name="approx_preview_hint">VAE でデコードせず、潜在表現から直接プレビューを作成します。大幅に高速ですが少しぼやけます。SDXL の低メモリモードでも使えます。</string>
+    <string name="long_prompt_npu">NPU で長いプロンプト</string>
+    <string name="long_prompt_npu_hint">77 トークンまでの SD1.5 / SDXL NPU モデル向け：77 トークンごとにモデルを実行して平均することで、最大 231 トークンまで使えます。チャンクが 1 つ増えるごとに、1 ステップあたり約 1 回の実行が増えます。次にモデルを読み込んだときに反映されます。</string>
 </resources>

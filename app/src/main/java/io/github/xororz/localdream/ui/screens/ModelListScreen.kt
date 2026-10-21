@@ -84,6 +84,8 @@ import io.github.xororz.localdream.R
 import io.github.xororz.localdream.data.*
 import io.github.xororz.localdream.data.DarkModePreference
 import io.github.xororz.localdream.navigation.Screen
+import io.github.xororz.localdream.service.BackendService
+import io.github.xororz.localdream.service.BackgroundGenerationService
 import io.github.xororz.localdream.service.ModelDownloadService
 import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.SmoothCircularWavyProgressIndicator
@@ -1430,6 +1432,19 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         preferences.getBoolean("show_diffusion_process", false),
                                     )
                                 }
+                                var approxPreview by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(
+                                            BackgroundGenerationService.APPROX_PREVIEW_PREF,
+                                            BackgroundGenerationService.APPROX_PREVIEW_DEFAULT,
+                                        ),
+                                    )
+                                }
+                                var longPromptNpu by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(BackendService.LONG_PROMPT_PREF, false),
+                                    )
+                                }
                                 var captureLogs by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_log_capture", false),
@@ -1596,6 +1611,20 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
                                         }
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                        )
+                                        SwitchSettingRow(
+                                            title = stringResource(R.string.approx_preview),
+                                            description = stringResource(R.string.approx_preview_hint),
+                                            checked = approxPreview,
+                                            onCheckedChange = {
+                                                approxPreview = it
+                                                preferences.edit {
+                                                    putBoolean(BackgroundGenerationService.APPROX_PREVIEW_PREF, it)
+                                                }
+                                            },
+                                        )
                                     }
                                 }
                                 HorizontalDivider(
@@ -1744,6 +1773,18 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         }
                                     }
                                 }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                SwitchSettingRow(
+                                    title = stringResource(R.string.long_prompt_npu),
+                                    description = stringResource(R.string.long_prompt_npu_hint),
+                                    checked = longPromptNpu,
+                                    onCheckedChange = {
+                                        longPromptNpu = it
+                                        preferences.edit { putBoolean(BackendService.LONG_PROMPT_PREF, it) }
+                                    },
+                                )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )

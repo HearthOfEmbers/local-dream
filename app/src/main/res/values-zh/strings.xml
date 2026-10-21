@@ -521,4 +521,23 @@
     <string name="model_storage_name_clash">Download 文件夹不区分大小写，以下名称会覆盖其他模型或嵌入：%1$s。请先重命名或删除它们。</string>
     <string name="model_storage_conflict">%1$s 中已存在 %2$s。请删除其中一份后重试。</string>
     <string name="model_storage_moving_blocked">正在移动模型，请在移动完成后重试。</string>
+    <string name="param_decrease">减少</string>
+    <string name="param_increase">增加</string>
+    <string name="param_value_range">范围：%1$s 到 %2$s</string>
+    <string name="cfg_rescale">CFG 重缩放：%.2f</string>
+    <string name="cfg_cutoff">在 %d%% 的步数后跳过负面提示词</string>
+    <string name="cfg_cutoff_off">跳过负面提示词：关闭</string>
+    <string name="prompt_templates">提示词模板</string>
+    <string name="prompt_templates_empty">还没有模板。可在下方将当前提示词保存为模板。</string>
+    <string name="prompt_template_name">模板名称</string>
+    <string name="prompt_template_save_hint">保存当前的提示词和负面提示词</string>
+    <string name="prompt_template_overwrite">将替换同名模板</string>
+    <string name="prompt_template_save">保存当前</string>
+    <string name="prompt_template_delete_confirm">删除模板“%1$s”？</string>
+    <string name="prompt_template_append">追加</string>
+    <string name="prompt_template_use">使用</string>
+    <string name="approx_preview">快速预览（近似）</string>
+    <string name="approx_preview_hint">直接由潜空间生成预览，而不用 VAE 解码。速度快得多，但略模糊。在 SDXL 低内存模式下也可用。</string>
+    <string name="long_prompt_npu">NPU 长提示词</string>
+    <string name="long_prompt_npu_hint">适用于限制为 77 个 token 的 SD1.5 和 SDXL NPU 模型：将模型按每 77 个 token 分块各运行一次并取平均，最多支持 231 个 token。每多一个分块，每步约多一次运行。下次加载模型时生效。</string>
 </resources>

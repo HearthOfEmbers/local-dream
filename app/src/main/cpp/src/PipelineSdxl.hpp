@@ -4,6 +4,7 @@
 #include <MNN/Interpreter.hpp>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -190,7 +191,8 @@ class PipelineSdxl : public PipelineQnn {
   }
 
   void beginDenoise(const GenerationRequest &req) override {
-    const int tokens = text_encoder_.contextLength(req.prompt, req.negative_prompt);
+    const int tokens = unetContextLength(
+        text_encoder_.contextLength(req.prompt, req.negative_prompt));
     if (unet_ && unet_tokens_ == tokens) return;
     // The UNet is the spill-fill group head, so release its dependents first.
     vae_encoder_.reset();
@@ -225,6 +227,32 @@ class PipelineSdxl : public PipelineQnn {
     const int ts = static_cast<int>(timestep);
     float *latents_in = const_cast<float *>(latents_batch2);
     float *time_ids = cond.time_ids.data();
+
+    // --long_prompt on a 77-token graph: one pass per text-bearing chunk,
+    // predictions averaged. The pooled vector is the one CLIP produced for
+    // the side's last real chunk.
+    if (cond.seq_len > 77 && unet_tokens_ == 77) {
+      auto run_half = [&](float *lat, float *hidden, float *pooled,
+                          float *tids, int chunks, float *out,
+                          const char *what) {
+        runChunkAveraged(
+            chunks, cond.hidden_dim, hidden, out, single_latent_size,
+            [&](float *h, float *o) {
+              if (StatusCode::SUCCESS !=
+                  unet_->executeUnetGraphsSDXL(lat, ts, h, pooled, tids, o,
+                                               77, 1))
+                throw std::runtime_error(
+                    std::string("QNN UNET SDXL exec failed (") + what + ")");
+            });
+      };
+      if (!skip_uncond)
+        run_half(latents_in, cond.negHidden(), cond.negPooled(), time_ids,
+                 cond.negative_chunks, out_batch2, "uncond");
+      run_half(latents_in + single_latent_size, cond.posHidden(),
+               cond.posPooled(), time_ids + 6, cond.positive_chunks,
+               out_batch2 + single_latent_size, "cond");
+      return;
+    }
 
     if (!skip_uncond &&
         StatusCode::SUCCESS != unet_->executeUnetGraphsSDXL(
@@ -276,6 +304,17 @@ class PipelineSdxl : public PipelineQnn {
   }
 
  private:
+  // UNet context length to load for a conditioning of `tokens`: a longer
+  // context needs its zstd patch; without one (--long_prompt on a package
+  // that ships none) the 77-token graph is used and runUnetStep averages
+  // over the chunks.
+  int unetContextLength(int tokens) const {
+    if (tokens <= 77 || text_encoder_.fixed_chunks_) return tokens;
+    const std::string patch =
+        model_dir_ + "/" + std::to_string(tokens) + ".patch";
+    return std::ifstream(patch).good() ? tokens : 77;
+  }
+
   // Context length of the unpatched unet binary on disk.
   int preloadedContextLength() const {
     return text_encoder_.fixed_chunks_ ? 77 * text_encoder_.max_chunks_ : 77;

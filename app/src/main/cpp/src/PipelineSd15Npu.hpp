@@ -118,13 +118,19 @@ class PipelineSd15Npu : public PipelineQnn {
     clip_interpreter_->resizeTensor(input, {1, 77, text_embedding_size});
     clip_interpreter_->resizeSession(clip_session_);
 
+    // One CLIP pass per 77-token chunk (a single chunk unless the backend
+    // runs with --long_prompt).
     auto run_side = [&](const std::vector<float> &embeddings, float *dst) {
-      memcpy(input->host<float>(), embeddings.data(),
-             77 * text_embedding_size * sizeof(float));
-      clip_interpreter_->runSession(clip_session_);
-      auto out = clip_interpreter_->getSessionOutput(clip_session_,
-                                                     "last_hidden_state");
-      memcpy(dst, out->host<float>(), 77 * text_embedding_size * sizeof(float));
+      const size_t chunk_size = 77 * text_embedding_size;
+      for (size_t offset = 0; offset + chunk_size <= embeddings.size();
+           offset += chunk_size) {
+        memcpy(input->host<float>(), embeddings.data() + offset,
+               chunk_size * sizeof(float));
+        clip_interpreter_->runSession(clip_session_);
+        auto out = clip_interpreter_->getSessionOutput(clip_session_,
+                                                       "last_hidden_state");
+        memcpy(dst + offset, out->host<float>(), chunk_size * sizeof(float));
+      }
     };
 
     if (need_negative) run_side(prompts.negative_embeddings, cond.negHidden());
@@ -148,16 +154,25 @@ class PipelineSd15Npu : public PipelineQnn {
     const int ts = static_cast<int>(timestep);
     float *latents_in = const_cast<float *>(latents_batch2);
 
-    if (!skip_uncond && StatusCode::SUCCESS !=
-                            unet_->executeUnetGraphs(
-                                latents_in, ts, cond.negHidden(), out_batch2))
-      throw std::runtime_error("QNN UNET exec failed (uncond)");
-
-    if (StatusCode::SUCCESS !=
-        unet_->executeUnetGraphs(latents_in + single_latent_size, ts,
-                                 cond.posHidden(),
-                                 out_batch2 + single_latent_size))
-      throw std::runtime_error("QNN UNET exec failed (cond)");
+    // The UNet graph is fixed at 77 tokens; a longer (--long_prompt)
+    // conditioning is averaged over its text-bearing chunks.
+    const bool chunked = cond.seq_len > 77;
+    auto run_half = [&](float *lat, float *hidden, int chunks, float *out,
+                        const char *what) {
+      runChunkAveraged(chunked ? chunks : 1, cond.hidden_dim, hidden, out,
+                       single_latent_size, [&](float *h, float *o) {
+                         if (StatusCode::SUCCESS !=
+                             unet_->executeUnetGraphs(lat, ts, h, o))
+                           throw std::runtime_error(
+                               std::string("QNN UNET exec failed (") + what +
+                               ")");
+                       });
+    };
+    if (!skip_uncond)
+      run_half(latents_in, cond.negHidden(), cond.negative_chunks, out_batch2,
+               "uncond");
+    run_half(latents_in + single_latent_size, cond.posHidden(),
+             cond.positive_chunks, out_batch2 + single_latent_size, "cond");
   }
 
   void vaeDecode(const GenerationRequest &, const float *latents,

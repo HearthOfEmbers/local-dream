@@ -63,6 +63,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -93,7 +94,6 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -146,6 +146,7 @@ import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.ModelRepository
 import io.github.xororz.localdream.data.ModelStorage
 import io.github.xororz.localdream.data.PatchScanner
+import io.github.xororz.localdream.data.PromptTemplate
 import io.github.xororz.localdream.data.RemoteRepository
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
@@ -159,6 +160,7 @@ import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.GenerationParamsDialog
 import io.github.xororz.localdream.ui.components.ImportParametersDialog
 import io.github.xororz.localdream.ui.components.OverlayIconButton
+import io.github.xororz.localdream.ui.components.ParamSlider
 import io.github.xororz.localdream.ui.components.ReproduceParametersDialog
 import io.github.xororz.localdream.ui.components.ShareParamsFlow
 import io.github.xororz.localdream.ui.components.SmoothLinearWavyProgressIndicator
@@ -355,6 +357,9 @@ fun ModelRunScreen(
     var batchCounts by remember { mutableIntStateOf(GenerationDefaults.GLOBAL.batchCounts) }
     var scheduler by remember { mutableStateOf(GenerationDefaults.GLOBAL.scheduler) }
     var aspectRatio by remember { mutableStateOf(GenerationDefaults.GLOBAL.aspectRatio) }
+    var cfgRescale by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgRescale) }
+    var cfgCutoff by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgCutoff) }
+    var showPromptTemplates by remember { mutableStateOf(false) }
     var showCustomAspectRatioDialog by remember { mutableStateOf(false) }
     var currentBatchIndex by remember { mutableIntStateOf(0) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -642,6 +647,21 @@ fun ModelRunScreen(
         }
     }
 
+    var guidanceSaveJob: Job? by remember { mutableStateOf(null) }
+    LaunchedEffect(modelId) {
+        cfgRescale = generationPreferences.observeCfgRescale(modelId).first()
+        cfgCutoff = generationPreferences.observeCfgCutoff(modelId).first()
+    }
+    fun saveGuidanceParams() {
+        guidanceSaveJob?.cancel()
+        guidanceSaveJob = scope.launch(Dispatchers.IO) {
+            delay(500)
+            generationPreferences.saveGuidanceParams(modelId, cfgRescale, cfgCutoff)
+        }
+    }
+    val promptTemplates by generationPreferences.observePromptTemplates()
+        .collectAsState(initial = emptyList())
+
     fun saveUltrafixParams() {
         ultrafixSaveJob?.cancel()
         ultrafixSaveJob = scope.launch(Dispatchers.IO) {
@@ -714,7 +734,7 @@ fun ModelRunScreen(
 
     val onBatchCountsChange = remember {
         { value: Float ->
-            batchCounts = value.roundToInt().coerceIn(1, 10)
+            batchCounts = value.roundToInt().coerceIn(1, GenerationDefaults.BATCH_COUNT_MAX)
             saveAllFields()
         }
     }
@@ -1016,6 +1036,8 @@ fun ModelRunScreen(
                     putExtra("effective_height", bmp.height)
                     putExtra("denoise_strength", ultrafixDenoiseStrength)
                     putExtra("scheduler", scheduler)
+                    putExtra("cfg_rescale", cfgRescale)
+                    putExtra("cfg_cutoff", cfgCutoff)
                     putExtra("ultrafix", true)
                     putExtra("ultrafix_tile_size", tileSize)
                     putExtra("backend_host", backendHost)
@@ -1822,6 +1844,9 @@ fun ModelRunScreen(
                 promptField.replaceText(defaults.prompt)
                 negativePromptField.replaceText(defaults.negativePrompt)
                 denoiseStrength = defaults.denoiseStrength
+                cfgRescale = defaults.cfgRescale
+                cfgCutoff = defaults.cfgCutoff
+                saveGuidanceParams()
                 scope.launch(Dispatchers.IO) {
                     generationPreferences.saveAllFields(
                         modelId = modelId,
@@ -2019,6 +2044,13 @@ fun ModelRunScreen(
                                         }
                                     }
                                 }
+                                IconButton(onClick = { showPromptTemplates = true }) {
+                                    Icon(
+                                        Icons.Default.BookmarkBorder,
+                                        contentDescription = stringResource(R.string.prompt_templates),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
                                 TextButton(
                                     onClick = { showAdvancedSettings = true },
                                     contentPadding = PaddingValues(
@@ -2037,6 +2069,54 @@ fun ModelRunScreen(
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
+                            }
+                            if (showPromptTemplates) {
+                                PromptTemplatesDialog(
+                                    templates = promptTemplates,
+                                    canSaveCurrent = promptField.text.isNotBlank() ||
+                                        negativePromptField.text.isNotBlank(),
+                                    onApply = { template ->
+                                        promptField.replaceText(template.prompt)
+                                        if (template.negativePrompt.isNotBlank()) {
+                                            negativePromptField.replaceText(template.negativePrompt)
+                                        }
+                                        saveAllFields()
+                                        showPromptTemplates = false
+                                    },
+                                    onAppend = { template ->
+                                        promptField.replaceText(
+                                            PromptTemplate.appendTo(promptField.text, template.prompt),
+                                        )
+                                        negativePromptField.replaceText(
+                                            PromptTemplate.appendTo(
+                                                negativePromptField.text,
+                                                template.negativePrompt,
+                                            ),
+                                        )
+                                        saveAllFields()
+                                        showPromptTemplates = false
+                                    },
+                                    onDelete = { template ->
+                                        scope.launch(Dispatchers.IO) {
+                                            generationPreferences.savePromptTemplates(
+                                                promptTemplates.filterNot { it.name == template.name },
+                                            )
+                                        }
+                                    },
+                                    onSaveCurrent = { name ->
+                                        val template = PromptTemplate(
+                                            name = name,
+                                            prompt = promptField.text,
+                                            negativePrompt = negativePromptField.text,
+                                        )
+                                        scope.launch(Dispatchers.IO) {
+                                            generationPreferences.savePromptTemplates(
+                                                promptTemplates.filterNot { it.name == name } + template,
+                                            )
+                                        }
+                                    },
+                                    onDismiss = { showPromptTemplates = false },
+                                )
                             }
                             if (showAdvancedSettings) {
                                 AdvancedSettingsDialog(
@@ -2057,6 +2137,8 @@ fun ModelRunScreen(
                                     useOpenCL = useOpenCL,
                                     batchCounts = batchCounts,
                                     denoiseStrength = denoiseStrength,
+                                    cfgRescale = cfgRescale,
+                                    cfgCutoff = cfgCutoff,
                                     seed = seed,
                                     returnedSeed = returnedSeed,
                                     onAspectRatioSelected = { ratio ->
@@ -2096,6 +2178,14 @@ fun ModelRunScreen(
                                     onGpuSelected = { showOpenCLWarningDialog = true },
                                     onBatchCountsChange = onBatchCountsChange,
                                     onDenoiseStrengthChange = onDenoiseStrengthChange,
+                                    onCfgRescaleChange = { value ->
+                                        cfgRescale = value
+                                        saveGuidanceParams()
+                                    },
+                                    onCfgCutoffChange = { value ->
+                                        cfgCutoff = value
+                                        saveGuidanceParams()
+                                    },
                                     onSeedChange = onSeedChange,
                                     onUseLastSeed = {
                                         seed = returnedSeed.toString()
@@ -2288,6 +2378,8 @@ fun ModelRunScreen(
                                             )
                                             putExtra("use_opencl", useOpenCL)
                                             putExtra("scheduler", scheduler)
+                                            putExtra("cfg_rescale", cfgRescale)
+                                            putExtra("cfg_cutoff", cfgCutoff)
                                             putExtra("aspect_ratio", aspectRatio)
                                             putExtra("batch_index", i)
                                             putExtra("backend_host", backendHost)
@@ -3239,11 +3331,8 @@ fun ModelRunScreen(
                     // tightens the denoise-step cap below.
                     val denoiseStepsMax =
                         minOf(GenerationDefaults.ULTRAFIX_DENOISE_STEPS_MAX, ultrafixSteps.roundToInt())
-                    Text(
-                        stringResource(R.string.steps, ultrafixSteps.roundToInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.steps, ultrafixSteps.roundToInt()),
                         value = ultrafixSteps,
                         onValueChange = {
                             ultrafixSteps = it
@@ -3253,25 +3342,20 @@ fun ModelRunScreen(
                             saveUltrafixParams()
                         },
                         valueRange = GenerationDefaults.ULTRAFIX_STEPS_MIN..GenerationDefaults.ULTRAFIX_STEPS_MAX,
-                        steps = 18,
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Independent UltraFix denoise steps (0..min(10, steps)):
                     // how many of the total steps actually denoise.
-                    Text(
-                        stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
                         value = ultrafixDenoiseSteps.toFloat(),
                         onValueChange = {
                             ultrafixDenoiseSteps = it.roundToInt()
                             saveUltrafixParams()
                         },
                         valueRange = 0f..denoiseStepsMax.toFloat(),
-                        steps = (denoiseStepsMax - 1).coerceAtLeast(0),
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Quality-denoise toggle: run UltraFix on neutral quality
