@@ -56,6 +56,8 @@ data class PromptTemplate(
             if (add.isEmpty()) return current
             val base = current.trimEnd()
             if (base.isEmpty()) return add
+            // Don't stack the same text twice (e.g. an identical negative prompt).
+            if (base.contains(add)) return current
             val separator = if (base.endsWith(",")) " " else ", "
             return base + separator + add
         }

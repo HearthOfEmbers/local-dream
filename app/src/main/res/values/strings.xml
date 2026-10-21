@@ -536,7 +536,7 @@
     <string name="param_increase">Increase</string>
     <string name="param_value_range">Range: %1$s to %2$s</string>
     <string name="cfg_rescale">CFG Rescale: %.2f</string>
-    <string name="cfg_cutoff">Skip negative prompt after %d%% of steps</string>
+    <string name="cfg_cutoff">Skip negative prompt for the last %d%% of steps</string>
     <string name="cfg_cutoff_off">Skip negative prompt: off</string>
     <string name="prompt_templates">Prompt templates</string>
     <string name="prompt_templates_empty">No templates yet. Save the current prompts as one below.</string>

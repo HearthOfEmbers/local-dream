@@ -525,7 +525,7 @@
     <string name="param_increase">늘리기</string>
     <string name="param_value_range">범위: %1$s ~ %2$s</string>
     <string name="cfg_rescale">CFG 리스케일: %.2f</string>
-    <string name="cfg_cutoff">스텝의 %d%% 이후 네거티브 프롬프트 건너뛰기</string>
+    <string name="cfg_cutoff">마지막 %d%% 스텝은 네거티브 프롬프트 건너뛰기</string>
     <string name="cfg_cutoff_off">네거티브 프롬프트 건너뛰기: 끔</string>
     <string name="prompt_templates">프롬프트 템플릿</string>
     <string name="prompt_templates_empty">아직 템플릿이 없습니다. 아래에서 현재 프롬프트를 저장하세요.</string>

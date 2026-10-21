@@ -352,15 +352,19 @@ internal fun AdvancedSettingsDialog(
                     step = 0.05f,
                     enabled = cfg > 1f,
                 )
+                // Shown as the share of final steps that skip the negative
+                // prompt (0 = off, on the left); stored as the CFG cutoff
+                // fraction the backend takes (1 - skipped share).
+                val skipShare = 1f - cfgCutoff
                 ParamSlider(
-                    label = if (cfgCutoff >= 1f) {
+                    label = if (skipShare <= 0f) {
                         stringResource(R.string.cfg_cutoff_off)
                     } else {
-                        stringResource(R.string.cfg_cutoff, (cfgCutoff * 100).roundToInt())
+                        stringResource(R.string.cfg_cutoff, (skipShare * 100).roundToInt())
                     },
-                    value = cfgCutoff,
-                    onValueChange = onCfgCutoffChange,
-                    valueRange = 0.1f..1f,
+                    value = skipShare,
+                    onValueChange = { onCfgCutoffChange(1f - it) },
+                    valueRange = 0f..0.9f,
                     step = 0.05f,
                     enabled = cfg > 1f,
                 )

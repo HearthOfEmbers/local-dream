@@ -525,7 +525,7 @@
     <string name="param_increase">增加</string>
     <string name="param_value_range">范围：%1$s 到 %2$s</string>
     <string name="cfg_rescale">CFG 重缩放：%.2f</string>
-    <string name="cfg_cutoff">在 %d%% 的步数后跳过负面提示词</string>
+    <string name="cfg_cutoff">最后 %d%% 的步数跳过负面提示词</string>
     <string name="cfg_cutoff_off">跳过负面提示词：关闭</string>
     <string name="prompt_templates">提示词模板</string>
     <string name="prompt_templates_empty">还没有模板。可在下方将当前提示词保存为模板。</string>

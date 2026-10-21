@@ -525,7 +525,7 @@
     <string name="param_increase">増やす</string>
     <string name="param_value_range">範囲：%1$s〜%2$s</string>
     <string name="cfg_rescale">CFG リスケール：%.2f</string>
-    <string name="cfg_cutoff">ステップの %d%% 以降はネガティブプロンプトをスキップ</string>
+    <string name="cfg_cutoff">最後の %d%% のステップはネガティブプロンプトをスキップ</string>
     <string name="cfg_cutoff_off">ネガティブプロンプトのスキップ：オフ</string>
     <string name="prompt_templates">プロンプトテンプレート</string>
     <string name="prompt_templates_empty">テンプレートはまだありません。下で現在のプロンプトを保存できます。</string>
