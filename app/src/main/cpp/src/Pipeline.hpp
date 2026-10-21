@@ -1206,10 +1206,12 @@ inline GenerationResult Pipeline::generate(
       // then save that half of the step; the others still compute it but
       // the prediction ignores it, so the result matches across backends.
       const int run_steps = (int)timesteps.size() - start_step;
-      const bool past_cutoff =
-          req.cfg_cutoff < 1.0f && run_steps > 0 &&
-          (float)(i - start_step) >= req.cfg_cutoff * (float)run_steps;
-      const bool cond_only = (req.cfg == 1.0f) || past_cutoff;
+      // Rounded with a small tolerance so 0.6 x 25 is 15 steps, not 16.
+      const int guided_steps =
+          (int)std::ceil(req.cfg_cutoff * (float)run_steps - 1e-4f);
+      const bool past_cutoff = req.cfg_cutoff < 1.0f && run_steps > 0 &&
+                               (i - start_step) >= guided_steps;
+      const bool guidance_off = (req.cfg == 1.0f) || past_cutoff;
       const bool skip_uncond =
           canSkipUncond() &&
           (req.cfg == 1.0f || (past_cutoff && canSkipUncondMidRun()));
@@ -1242,7 +1244,7 @@ inline GenerationResult Pipeline::generate(
               xt::adapt(unet_out_latents, shape_batch2);
           xt::xarray<float> uncond = xt::view(noise_pred_batch, 0);
           xt::xarray<float> txt = xt::view(noise_pred_batch, 1);
-          if (cond_only) {
+          if (guidance_off) {
             noise_pred = xt::eval(txt);
           } else {
             noise_pred = applyGuidance(uncond, txt, req.cfg, req.cfg_rescale);
