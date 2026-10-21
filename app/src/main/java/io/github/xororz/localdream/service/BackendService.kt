@@ -61,10 +61,12 @@ class BackendService : Service() {
         private const val TAG = "BackendService"
         private const val EXECUTABLE_NAME = "libstable_diffusion_core.so"
         const val RUNTIME_DIR = "runtime_libs"
+
         // app_prefs key: start NPU backends with --long_prompt (prompts up to
         // 231 tokens on models whose UNet is fixed at 77 tokens). Read when the
         // backend starts, so a change applies the next time a model loads.
         const val LONG_PROMPT_PREF = "long_prompt_npu"
+
         private const val RUNTIME_VERSION = "qnn_2_51_0_260929"
         private const val RUNTIME_VERSION_FILE = ".runtime_version"
         private const val NOTIFICATION_ID = 2

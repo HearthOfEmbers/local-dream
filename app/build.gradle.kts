@@ -95,14 +95,13 @@ android {
         }
     }
     flavorDimensions += "version"
+    // This fork ships only the unfiltered build; the upstream "filter" flavor
+    // (bundled NSFW safety checker) was dropped. BuildConfig.FLAVOR checks for
+    // "filter" in the app code are therefore always false.
     productFlavors {
         create("basic") {
             dimension = "version"
             versionNameSuffix = ""
-        }
-        create("filter") {
-            dimension = "version"
-            versionNameSuffix = "_with_filter"
         }
     }
 }
