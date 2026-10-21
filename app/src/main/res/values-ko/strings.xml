@@ -540,4 +540,19 @@
     <string name="approx_preview_hint">VAE로 디코딩하지 않고 잠재 공간에서 바로 미리보기를 만듭니다. 훨씬 빠르지만 약간 흐릿합니다. SDXL 저메모리 모드에서도 작동합니다.</string>
     <string name="long_prompt_npu">NPU 긴 프롬프트</string>
     <string name="long_prompt_npu_hint">77토큰으로 제한된 SD1.5 및 SDXL NPU 모델용: 77토큰 단위로 모델을 한 번씩 실행해 평균을 내어 최대 231토큰까지 사용할 수 있습니다. 청크가 하나 늘 때마다 스텝당 약 한 번의 실행이 추가됩니다. 다음에 모델을 불러올 때 적용됩니다.</string>
+    <string name="queue_add">대기열에 추가</string>
+    <string name="queue_added">대기열에 추가했습니다</string>
+    <string name="queue_title">대기열 · %d장</string>
+    <string name="queue_clear">비우기</string>
+    <string name="queue_start">시작</string>
+    <string name="queue_pending">대기 %d장</string>
+    <string name="xy_plot">X/Y 플롯</string>
+    <string name="xy_x_axis">X축</string>
+    <string name="xy_y_axis">Y축</string>
+    <string name="xy_values">값 (쉼표로 구분)</string>
+    <string name="xy_cells">%d장을 생성해 라벨이 붙은 그리드 한 장으로 합칩니다.</string>
+    <string name="xy_invalid">서로 다른 두 축과 올바른 값을 지정하세요 (최대 %d장).</string>
+    <string name="xy_hint">나머지 설정은 프롬프트 화면의 값을 사용합니다. 시드를 고정하지 않으면 그리드 전체에 같은 랜덤 시드를 씁니다.</string>
+    <string name="xy_start">대기열에 추가</string>
+    <string name="time_left">약 %s 남음</string>
 </resources>

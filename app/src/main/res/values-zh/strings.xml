@@ -540,4 +540,19 @@
     <string name="approx_preview_hint">直接由潜空间生成预览，而不用 VAE 解码。速度快得多，但略模糊。在 SDXL 低内存模式下也可用。</string>
     <string name="long_prompt_npu">NPU 长提示词</string>
     <string name="long_prompt_npu_hint">适用于限制为 77 个 token 的 SD1.5 和 SDXL NPU 模型：将模型按每 77 个 token 分块各运行一次并取平均，最多支持 231 个 token。每多一个分块，每步约多一次运行。下次加载模型时生效。</string>
+    <string name="queue_add">加入队列</string>
+    <string name="queue_added">已加入队列</string>
+    <string name="queue_title">队列 · %d 张</string>
+    <string name="queue_clear">清空</string>
+    <string name="queue_start">开始</string>
+    <string name="queue_pending">排队 %d 张</string>
+    <string name="xy_plot">X/Y 图</string>
+    <string name="xy_x_axis">X 轴</string>
+    <string name="xy_y_axis">Y 轴</string>
+    <string name="xy_values">取值（逗号分隔）</string>
+    <string name="xy_cells">将生成 %d 张图并拼成一张带标签的网格。</string>
+    <string name="xy_invalid">请选择两个不同的轴并填写有效取值（最多 %d 张）。</string>
+    <string name="xy_hint">其余参数取自提示词页面。未固定种子时，整张网格使用同一个随机种子。</string>
+    <string name="xy_start">加入队列</string>
+    <string name="time_left">约剩 %s</string>
 </resources>
