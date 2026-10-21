@@ -56,7 +56,7 @@ enum class XyAxisType(val title: String) {
     SCHEDULER("Sampler"),
     DENOISE("Denoise"),
     CFG_RESCALE("CFG Rescale"),
-    CFG_CUTOFF("Skip negative after"),
+    CFG_CUTOFF("Skip negative (last part)"),
     PROMPT_SR("Prompt S/R"),
     ;
 
@@ -70,7 +70,7 @@ enum class XyAxisType(val title: String) {
             SCHEDULER -> "dpm, dpm_karras, dpm_sde, euler, euler_a, lcm"
             DENOISE -> "e.g. 0.3, 0.5, 0.7"
             CFG_RESCALE -> "e.g. 0, 0.5, 0.7"
-            CFG_CUTOFF -> "e.g. 0.5, 0.8, 1 (1 = never)"
+            CFG_CUTOFF -> "share of final steps, e.g. 0, 0.2, 0.5 (0 = off)"
             PROMPT_SR -> "first value is searched in the prompt, e.g. red, blue, green"
         }
 }
@@ -161,7 +161,7 @@ private fun isValidAxisValue(type: XyAxisType, value: String): Boolean = when (t
 
     XyAxisType.DENOISE, XyAxisType.CFG_RESCALE -> value.toFloatOrNull()?.let { it in 0f..1f } == true
 
-    XyAxisType.CFG_CUTOFF -> value.toFloatOrNull()?.let { it in 0.05f..1f } == true
+    XyAxisType.CFG_CUTOFF -> value.toFloatOrNull()?.let { it in 0f..0.9f } == true
 
     XyAxisType.PROMPT_SR -> true
 }
@@ -184,7 +184,8 @@ fun applyXyValue(job: GenerationJob, axis: XyAxis, index: Int): GenerationJob {
 
         XyAxisType.CFG_RESCALE -> job.copy(cfgRescale = value.toFloat())
 
-        XyAxisType.CFG_CUTOFF -> job.copy(cfgCutoff = value.toFloat())
+        // Same "skip for the last N" reading as the Advanced settings slider.
+        XyAxisType.CFG_CUTOFF -> job.copy(cfgCutoff = 1f - value.toFloat())
 
         // A1111 semantics: the first value is the search term and stays as-is.
         XyAxisType.PROMPT_SR -> if (index == 0) {
