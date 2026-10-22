@@ -76,6 +76,10 @@ android {
         }
         debug {
             signingConfig = signingConfigs.getByName("release")
+            // Own package and name so a test build installs next to the regular
+            // app instead of replacing it (and keeps that app's data intact).
+            applicationIdSuffix = ".mods"
+            versionNameSuffix = "-mods"
         }
     }
     compileOptions {
