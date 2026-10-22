@@ -553,6 +553,7 @@
     <string name="xy_cells">%d 枚を生成し、ラベル付きのグリッド 1 枚にまとめます。</string>
     <string name="xy_invalid">異なる 2 つの軸と有効な値を指定してください（最大 %d 枚）。</string>
     <string name="xy_hint">その他の設定はプロンプト画面の値を使います。シード未指定の場合、グリッド全体で同じランダムシードを使います。</string>
+    <string name="xy_needs_cfg">CFG 1 ではネガティブプロンプトを使わないため、ネガティブスキップと CFG Rescale は効果がなく、全セルが同じになります。CFG を 1 より上げるか、もう一方の軸を CFG にしてください。</string>
     <string name="xy_start">キューに追加</string>
     <string name="time_left">残り約 %s</string>
 </resources>

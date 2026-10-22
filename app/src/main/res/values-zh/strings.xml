@@ -553,6 +553,7 @@
     <string name="xy_cells">将生成 %d 张图并拼成一张带标签的网格。</string>
     <string name="xy_invalid">请选择两个不同的轴并填写有效取值（最多 %d 张）。</string>
     <string name="xy_hint">其余参数取自提示词页面。未固定种子时，整张网格使用同一个随机种子。</string>
+    <string name="xy_needs_cfg">CFG 为 1 时不使用反向提示词，跳过反向提示词和 CFG Rescale 都不起作用，所有格子会一样。请把 CFG 调到 1 以上，或把 CFG 作为另一条轴。</string>
     <string name="xy_start">加入队列</string>
     <string name="time_left">约剩 %s</string>
 </resources>

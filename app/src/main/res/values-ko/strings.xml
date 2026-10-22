@@ -553,6 +553,7 @@
     <string name="xy_cells">%d장을 생성해 라벨이 붙은 그리드 한 장으로 합칩니다.</string>
     <string name="xy_invalid">서로 다른 두 축과 올바른 값을 지정하세요 (최대 %d장).</string>
     <string name="xy_hint">나머지 설정은 프롬프트 화면의 값을 사용합니다. 시드를 고정하지 않으면 그리드 전체에 같은 랜덤 시드를 씁니다.</string>
+    <string name="xy_needs_cfg">CFG 1에서는 네거티브 프롬프트를 쓰지 않아 네거티브 건너뛰기와 CFG Rescale이 효과가 없고 모든 칸이 같아집니다. CFG를 1보다 높이거나 다른 축을 CFG로 지정하세요.</string>
     <string name="xy_start">대기열에 추가</string>
     <string name="time_left">약 %s 남음</string>
 </resources>

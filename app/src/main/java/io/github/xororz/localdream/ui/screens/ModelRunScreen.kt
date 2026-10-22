@@ -2618,6 +2618,7 @@ fun ModelRunScreen(
             if (showXyPlotDialog) {
                 XyPlotDialog(
                     useImg2img = selectedImageUri != null,
+                    baseCfg = cfg,
                     initialX = xyLastX,
                     initialXValues = xyLastXValues,
                     initialY = xyLastY,

@@ -564,6 +564,7 @@
     <string name="xy_cells">%d images will be generated and tiled into one labelled grid.</string>
     <string name="xy_invalid">Pick two different axes with valid values (at most %d images).</string>
     <string name="xy_hint">Everything else comes from the prompt page. Without a fixed seed, one random seed is used for the whole grid.</string>
+    <string name="xy_needs_cfg">Skip negative and CFG Rescale do nothing at CFG 1 (the negative prompt isn\'t used), so every cell would look the same. Raise CFG above 1 or add CFG as the other axis.</string>
     <string name="xy_start">Queue plot</string>
     <string name="time_left">about %s left</string>
 </resources>

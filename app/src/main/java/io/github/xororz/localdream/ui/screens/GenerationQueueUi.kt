@@ -133,6 +133,7 @@ internal fun GenerationQueueCard(
 @Composable
 internal fun XyPlotDialog(
     useImg2img: Boolean,
+    baseCfg: Float,
     initialX: XyAxisType,
     initialXValues: String,
     initialY: XyAxisType,
@@ -155,6 +156,11 @@ internal fun XyPlotDialog(
     }
     val valid = xAxis != null && yAxis != null && xType != XyAxisType.NONE && xType != yType &&
         cells in 1..XY_MAX_CELLS
+    // Skip negative and CFG Rescale only act on the negative-prompt pass, which
+    // CFG 1 never runs, so such a sweep would give identical images.
+    val guidanceOnly = setOf(XyAxisType.CFG_CUTOFF, XyAxisType.CFG_RESCALE)
+    val noEffectAtCfg1 = baseCfg <= 1f && XyAxisType.CFG !in setOf(xType, yType) &&
+        (xType in guidanceOnly || yType in guidanceOnly)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -195,6 +201,13 @@ internal fun XyPlotDialog(
                         MaterialTheme.colorScheme.error
                     },
                 )
+                if (noEffectAtCfg1) {
+                    Text(
+                        stringResource(R.string.xy_needs_cfg),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     stringResource(R.string.xy_hint),
                     style = MaterialTheme.typography.bodySmall,
