@@ -2,11 +2,15 @@ package io.github.xororz.localdream.ui.screens
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -103,6 +107,20 @@ internal fun FillColumn(
             }
         }
     }
+}
+
+/**
+ * Expand-and-fade visibility for sections of the prompt page. Callable where
+ * an outer Column's scoped AnimatedVisibility would otherwise be picked up.
+ */
+@Composable
+internal fun ExpandingVisibility(visible: Boolean, content: @Composable AnimatedVisibilityScope.() -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+        content = content,
+    )
 }
 
 /** One tap-to-change parameter in the prompt page's chip row. */
@@ -312,7 +330,7 @@ internal fun GenerationProgressSlot(
                         contentScale = ContentScale.Crop,
                     )
                 } else {
-                    Box(contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Default.HourglassTop,
                             contentDescription = null,

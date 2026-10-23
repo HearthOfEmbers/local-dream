@@ -112,6 +112,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -180,8 +181,11 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -202,7 +206,16 @@ fun ModelRunScreen(
     modifier: Modifier = Modifier,
     isRemote: Boolean = false,
 ) {
-    val serviceState by BackgroundGenerationService.generationState.collectAsState()
+    // Only whether a generation is running is read during composition. The
+    // per-step states (progress, preview) go straight to the handler further
+    // down, so a step tick doesn't recompose the whole screen.
+    val serviceBusy by remember {
+        BackgroundGenerationService.generationState
+            .map { it is GenerationState.Progress }
+            .distinctUntilChanged()
+    }.collectAsState(
+        initial = BackgroundGenerationService.generationState.value is GenerationState.Progress,
+    )
     val backendState by BackendService.backendState.collectAsState()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -1816,8 +1829,8 @@ fun ModelRunScreen(
         }
     }
 
-    LaunchedEffect(serviceState) {
-        when (val state = serviceState) {
+    val onServiceState: suspend (GenerationState) -> Unit = { state ->
+        when (state) {
             is GenerationState.Progress -> {
                 if (generationStartTime == null) {
                     generationStartTime = System.currentTimeMillis()
@@ -1962,6 +1975,12 @@ fun ModelRunScreen(
                 progress = 0f
             }
         }
+    }
+    // Latest handler, so it always sees this composition's values. A new
+    // state cancels a handler still running (as the keyed effect used to).
+    val latestOnServiceState by rememberUpdatedState(onServiceState)
+    LaunchedEffect(Unit) {
+        BackgroundGenerationService.generationState.collectLatest { latestOnServiceState(it) }
     }
 
     // Only intercept back while a generation is running: back then offers to
@@ -2786,11 +2805,7 @@ fun ModelRunScreen(
                     if (!typingMode) {
                         ImageInputsRow()
                         ParamChips()
-                        AnimatedVisibility(
-                            visible = errorMessage != null,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
+                        ExpandingVisibility(visible = errorMessage != null) {
                             errorMessage?.let { msg ->
                                 Card(
                                     onClick = { errorMessage = null },
@@ -2818,15 +2833,11 @@ fun ModelRunScreen(
                                 }
                             }
                         }
-                        AnimatedVisibility(
-                            visible = generationQueue.isNotEmpty(),
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
+                        ExpandingVisibility(visible = generationQueue.isNotEmpty()) {
                             GenerationQueueCard(
                                 jobs = generationQueue.toList(),
                                 canStart = !runnerActive && !isRunning && !isUpscaling &&
-                                    serviceState !is GenerationState.Progress,
+                                    !serviceBusy,
                                 onStart = { startGenerationRunner(includeLiveBatch = false) },
                                 onRemove = { job ->
                                     generationQueue.remove(job)
@@ -2843,11 +2854,7 @@ fun ModelRunScreen(
                                 },
                             )
                         }
-                        AnimatedVisibility(
-                            visible = isRunning,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
+                        ExpandingVisibility(visible = isRunning) {
                             GenerationProgressSlot(
                                 progress = { progress },
                                 preview = intermediateBitmap,
@@ -2862,7 +2869,7 @@ fun ModelRunScreen(
                     }
                 }
             }
-            val generateEnabled = serviceState !is GenerationState.Progress &&
+            val generateEnabled = !serviceBusy &&
                 !isRunning && !runnerActive && !isUpscaling && !isUltrafixPreparing &&
                 (selectedImageUri == null || base64EncodeDone)
             val startGenerate = {
@@ -2892,7 +2899,7 @@ fun ModelRunScreen(
                     generateEnabled = generateEnabled,
                     extrasEnabled = !isUpscaling && !isUltrafixPreparing &&
                         (selectedImageUri == null || base64EncodeDone),
-                    isLoading = serviceState is GenerationState.Progress || isUpscaling,
+                    isLoading = serviceBusy || isUpscaling,
                     onGenerate = startGenerate,
                     onAddToQueue = {
                         focusManager.clearFocus()
@@ -3554,19 +3561,21 @@ fun ModelRunScreen(
 
     // Full-size view of the live preview from the progress slot; closes by
     // itself once the run ends.
-    val livePreview = intermediateBitmap
-    if (showLivePreview && livePreview != null) {
-        ZoomableImageOverlay(
-            bitmap = livePreview,
-            onDismiss = { showLivePreview = false },
-            topEndContent = {
-                OverlayIconButton(
-                    icon = Icons.Default.Close,
-                    contentDescription = "close preview",
-                    onClick = { showLivePreview = false },
-                )
-            },
-        )
+    if (showLivePreview) {
+        // Read only while open: the preview changes every step.
+        intermediateBitmap?.let { livePreview ->
+            ZoomableImageOverlay(
+                bitmap = livePreview,
+                onDismiss = { showLivePreview = false },
+                topEndContent = {
+                    OverlayIconButton(
+                        icon = Icons.Default.Close,
+                        contentDescription = "close preview",
+                        onClick = { showLivePreview = false },
+                    )
+                },
+            )
+        }
     }
     LaunchedEffect(isRunning) {
         if (!isRunning) showLivePreview = false
