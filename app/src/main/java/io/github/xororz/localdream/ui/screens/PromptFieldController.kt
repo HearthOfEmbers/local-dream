@@ -123,7 +123,8 @@ internal class PromptFieldController(
             val results = repository.suggest(activeTag.token, suggestionCount)
             // Embeddings always pinned to the top; their relevance is local to
             // this user, so they outrank dictionary suggestions by construction.
-            suggestions = embeddings + results
+            // Deduped because the strip keys its items by tag.
+            suggestions = (embeddings + results).distinctBy { it.replacementTag }
         }
     }
 
