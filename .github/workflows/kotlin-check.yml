@@ -28,7 +28,13 @@ jobs:
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" "platforms;android-37" "build-tools;37.0.0"
+          # Newer platforms carry a minor version in the package name
+          # (android-37.0), so look the exact names up.
+          LIST=$("$SDKM" --list 2>/dev/null)
+          PLATFORM=$(echo "$LIST" | grep -oE 'platforms;android-37[^ |]*' | head -1)
+          BUILD_TOOLS=$(echo "$LIST" | grep -oE 'build-tools;37[^ |]*' | sort -V | tail -1)
+          echo "Installing $PLATFORM $BUILD_TOOLS"
+          "$SDKM" "$PLATFORM" "$BUILD_TOOLS"
       - uses: gradle/actions/setup-gradle@v4
       - name: Compile, lint and unit tests
         run: ./gradlew --no-daemon --stacktrace :app:compileBasicDebugKotlin :app:ktlintCheck :app:testBasicDebugUnitTest
