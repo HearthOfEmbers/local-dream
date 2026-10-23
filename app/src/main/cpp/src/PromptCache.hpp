@@ -16,7 +16,9 @@
 namespace prompt_cache {
 
 constexpr char kMagic[4] = {'P', 'C', 'L', 'P'};
-constexpr uint32_t kVersion = 1;
+// v2: SDXL pooled vector taken from the first chunk instead of the last, so
+// multi-chunk entries written by v1 must not be reused.
+constexpr uint32_t kVersion = 2;
 constexpr uint32_t kModeSd15 = 0;
 constexpr uint32_t kModeSdxl = 1;
 // Anima (Qwen text encoder): 512-token context, no pooled output. Its own mode

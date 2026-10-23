@@ -1,0 +1,40 @@
+# Compile-checks the app's Kotlin on every push to a work branch. The native
+# engine is built separately (QNN SDK), so this only covers the Gradle side.
+name: Kotlin check
+
+on:
+  push:
+    branches: ["claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: kotlin-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kotlin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      # The runner image ships the Android SDK; add the platform this app
+      # compiles against.
+      - name: SDK platform
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          # Newer platforms carry a minor version in the package name
+          # (android-37.0), so look the exact names up.
+          LIST=$("$SDKM" --list 2>/dev/null)
+          PLATFORM=$(echo "$LIST" | grep -oE 'platforms;android-37[^ |]*' | head -1)
+          BUILD_TOOLS=$(echo "$LIST" | grep -oE 'build-tools;37[^ |]*' | sort -V | tail -1)
+          echo "Installing $PLATFORM $BUILD_TOOLS"
+          "$SDKM" "$PLATFORM" "$BUILD_TOOLS"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile, lint and unit tests
+        run: ./gradlew --no-daemon :app:compileBasicDebugKotlin :app:ktlintCheck :app:testBasicDebugUnitTest

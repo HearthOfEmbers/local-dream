@@ -156,11 +156,11 @@ class PipelineSdxl : public PipelineQnn {
                     prompts.negative_embeddings_2.data() + offset * text_embedding_size_2,
                     prompts.eos_positions[chunk],
                     cond.negHidden() + offset * cond.hidden_dim, pooled.data());
-        // Take the pooled vector from the last chunk that holds actual prompt
-        // text, not the last padded one: the two sides can need a different
-        // number of chunks, and a short negative next to a long positive would
-        // otherwise be pooled from an empty chunk.
-        if (chunk + 1 == cond.negative_chunks)
+        // The pooled vector comes from the first chunk, as in A1111 and
+        // ComfyUI. Taking it from the last chunk let whatever trailed the
+        // final BREAK (often a short fragment) set the global conditioning
+        // for the whole image, which came out washed out and low-CFG looking.
+        if (chunk == 0)
           std::copy(pooled.begin(), pooled.end(), cond.negPooled());
       }
       if (need_positive) {
@@ -168,7 +168,7 @@ class PipelineSdxl : public PipelineQnn {
                     prompts.positive_embeddings_2.data() + offset * text_embedding_size_2,
                     prompts.eos_positions[cond.seq_len / 77 + chunk],
                     cond.posHidden() + offset * cond.hidden_dim, pooled.data());
-        if (chunk + 1 == cond.positive_chunks)
+        if (chunk == 0)
           std::copy(pooled.begin(), pooled.end(), cond.posPooled());
       }
     }
@@ -230,7 +230,7 @@ class PipelineSdxl : public PipelineQnn {
 
     // --long_prompt on a 77-token graph: one pass per text-bearing chunk,
     // predictions averaged. The pooled vector is the one CLIP produced for
-    // the side's last real chunk.
+    // the side's first chunk.
     if (cond.seq_len > 77 && unet_tokens_ == 77) {
       auto run_half = [&](float *lat, float *hidden, float *pooled,
                           float *tids, int chunks, float *out,

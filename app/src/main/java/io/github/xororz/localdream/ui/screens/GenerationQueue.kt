@@ -75,6 +75,70 @@ enum class XyAxisType(val title: String) {
         }
 }
 
+/**
+ * Slider and fill-range settings for a numeric axis: the value range, the
+ * slider's step, and the default step of the fill-range helper. [integer]
+ * axes are written without decimals. Null for axes picked another way.
+ */
+@Immutable
+data class XyAxisSlider(
+    val range: ClosedFloatingPointRange<Float>,
+    val step: Float,
+    val fillStep: Float,
+    val integer: Boolean = false,
+)
+
+val XyAxisType.slider: XyAxisSlider?
+    get() = when (this) {
+        XyAxisType.STEPS -> XyAxisSlider(
+            GenerationDefaults.STEPS_MIN..GenerationDefaults.STEPS_MAX,
+            step = 1f,
+            fillStep = 2f,
+            integer = true,
+        )
+
+        XyAxisType.CFG -> XyAxisSlider(GenerationDefaults.CFG_MIN..GenerationDefaults.CFG_MAX, 0.1f, 0.2f)
+
+        XyAxisType.DENOISE -> XyAxisSlider(0f..1f, 0.05f, 0.1f)
+
+        XyAxisType.CFG_RESCALE -> XyAxisSlider(0f..1f, 0.05f, 0.1f)
+
+        XyAxisType.CFG_CUTOFF -> XyAxisSlider(0f..0.9f, 0.05f, 0.1f)
+
+        else -> null
+    }
+
+/** The values typed into an axis box, split on commas, blanks dropped. */
+fun xyValueList(raw: String): List<String> = raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+/** Appends [value] to the comma-separated [raw] list. */
+fun appendXyValue(raw: String, value: String): String {
+    val values = xyValueList(raw)
+    return (values + value).joinToString(", ")
+}
+
+/** Adds [value] to [raw], or removes it when it is already listed. */
+fun toggleXyValue(raw: String, value: String): String {
+    val values = xyValueList(raw)
+    return if (value in values) (values - value).joinToString(", ") else (values + value).joinToString(", ")
+}
+
+/**
+ * Every value from [from] to [to] (either direction) in steps of [step],
+ * snapped to the step's precision so 0.2 steps don't drift into 1.4000001.
+ * Null when the inputs can't make a list or it would exceed [XY_MAX_CELLS].
+ */
+fun fillXyRange(from: Float, to: Float, step: Float, integer: Boolean): List<String>? {
+    if (step <= 0f || from.isNaN() || to.isNaN()) return null
+    val count = (kotlin.math.abs(to - from) / step + 1e-4f).toInt() + 1
+    if (count > XY_MAX_CELLS) return null
+    val direction = if (to >= from) 1f else -1f
+    return (0 until count).map { i ->
+        val v = from + direction * step * i
+        if (integer) v.roundToInt().toString() else formatAxisNumber(v)
+    }.distinct()
+}
+
 /** A parsed axis: its type plus the user-visible label and raw value per entry. */
 @Immutable
 data class XyAxis(val type: XyAxisType, val values: List<String>)
@@ -116,7 +180,7 @@ private val RANGE_REGEX = Regex("""^\s*(-?[\d.]+)\s*-\s*(-?[\d.]+)\s*(?:\(\s*\+?
  */
 fun parseXyAxis(type: XyAxisType, raw: String): XyAxis? {
     if (type == XyAxisType.NONE) return XyAxis(type, emptyList())
-    val parts = raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    val parts = xyValueList(raw)
     val values = mutableListOf<String>()
     for (part in parts) {
         val range = if (type == XyAxisType.SEED || type == XyAxisType.STEPS) RANGE_REGEX.find(part) else null
@@ -140,8 +204,9 @@ fun parseXyAxis(type: XyAxisType, raw: String): XyAxis? {
     return if (values.size >= minCount) XyAxis(type, values) else null
 }
 
-private val SCHEDULER_IDS = setOf(
-    "dpm", "dpm_karras", "dpm_sde", "dpm_sde_karras", "euler", "euler_karras", "euler_a", "euler_a_karras", "lcm",
+/** Sampler ids an axis accepts, in the order the picker shows them. */
+val XY_SCHEDULER_IDS = listOf(
+    "lcm", "euler_a", "euler", "dpm", "dpm_sde", "euler_a_karras", "euler_karras", "dpm_karras", "dpm_sde_karras",
 )
 
 private fun isValidAxisValue(type: XyAxisType, value: String): Boolean = when (type) {
@@ -157,7 +222,7 @@ private fun isValidAxisValue(type: XyAxisType, value: String): Boolean = when (t
         it in GenerationDefaults.CFG_MIN..GenerationDefaults.CFG_MAX
     } == true
 
-    XyAxisType.SCHEDULER -> value in SCHEDULER_IDS
+    XyAxisType.SCHEDULER -> value in XY_SCHEDULER_IDS
 
     XyAxisType.DENOISE, XyAxisType.CFG_RESCALE -> value.toFloatOrNull()?.let { it in 0f..1f } == true
 
