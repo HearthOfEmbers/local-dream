@@ -1,5 +1,6 @@
 package io.github.xororz.localdream.ui.screens
 
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import io.github.xororz.localdream.data.TagAutocompleteRepository
 import io.github.xororz.localdream.data.TagSuggestion
+import io.github.xororz.localdream.ui.components.PromptSuggestionDock
 import io.github.xororz.localdream.ui.components.PromptTagTextField
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -55,11 +57,6 @@ internal class PromptFieldController(
     var isFocused by mutableStateOf(false)
         private set
 
-    // Set when the back gesture dismisses the popup; reset on the next edit so the
-    // popup stays closed until the user actually does something again.
-    var popupDismissed by mutableStateOf(false)
-        private set
-
     // Undo/redo history of the text. Rapid typing coalesces into a single step;
     // suggestion picks and toolbar edits are discrete steps.
     private var undoStack by mutableStateOf<List<String>>(emptyList())
@@ -99,9 +96,6 @@ internal class PromptFieldController(
         if (textChanged && recordHistory) {
             pushHistory(previousText, coalesce = true)
         }
-        if (textChanged || selectionChanged) {
-            popupDismissed = false
-        }
         fieldValue = value
         if (textChanged) {
             onTextCommitted()
@@ -134,8 +128,7 @@ internal class PromptFieldController(
     }
 
     fun applySuggestion(suggestion: TagSuggestion) {
-        // Discrete history step so an accidental pick can be undone. The popup is
-        // left up (suggestions cleared, but the toolbar persists) for follow-up.
+        // Discrete history step so an accidental pick can be undone.
         pushHistory(fieldValue.text, coalesce = false)
         val (updatedText, updatedSelection) = TagAutocompleteRepository.applySuggestion(
             fieldValue.text,
@@ -145,7 +138,6 @@ internal class PromptFieldController(
         fieldValue = TextFieldValue(updatedText, TextRange(updatedSelection))
         suggestions = emptyList()
         activeQuery = null
-        popupDismissed = false
         onTextCommitted()
     }
 
@@ -200,12 +192,34 @@ internal class PromptFieldController(
 
     fun onFocusChanged(focused: Boolean) {
         isFocused = focused
-        if (!focused) suggestions = emptyList()
+        if (!focused) {
+            suggestJob?.cancel()
+            suggestions = emptyList()
+            activeQuery = null
+        }
     }
 
-    fun dismissPopup() {
-        popupDismissed = true
+    /** Inserts a BREAK (its own comma-separated tag) at the caret. */
+    fun insertBreak() {
+        runTagAction(::insertBreakAt)
     }
+}
+
+/**
+ * [text] with a BREAK tag inserted at [selection], separated by commas like
+ * any other tag, and the caret placed after it.
+ */
+internal fun insertBreakAt(text: String, selection: Int): Pair<String, Int> {
+    val at = selection.coerceIn(0, text.length)
+    val head = text.substring(0, at).trimEnd()
+    val tail = text.substring(at).trimStart().removePrefix(",").trimStart()
+    val prefix = when {
+        head.isEmpty() -> ""
+        head.endsWith(",") -> "$head "
+        else -> "$head, "
+    }
+    val inserted = prefix + "BREAK, "
+    return (inserted + tail) to inserted.length
 }
 
 @Composable
@@ -245,30 +259,37 @@ internal fun PromptTokenCountEffect(
 @Composable
 internal fun ControlledPromptTagTextField(
     controller: PromptFieldController,
-    autocompleteAvailable: Boolean,
     label: @Composable (() -> Unit),
     modifier: Modifier = Modifier,
+    fill: Boolean = false,
+    lines: Int = 2,
 ) {
-    val popupVisible =
-        autocompleteAvailable && controller.isFocused && !controller.popupDismissed
     PromptTagTextField(
         value = controller.fieldValue,
         onValueChange = { controller.update(it) },
         modifier = modifier,
         label = label,
-        suggestions = controller.suggestions,
-        onSuggestionClick = controller::applySuggestion,
-        showSuggestions = popupVisible,
-        // Toolbar stays up even on an empty prompt so undo/redo remain reachable.
-        showToolbar = popupVisible,
-        highlightQuery = controller.activeQuery,
+        fill = fill,
+        lines = lines,
         overflowOffset = controller.overflowOffset,
         onFocusChanged = controller::onFocusChanged,
-        onDismissSuggestions = controller::dismissPopup,
-        onUndo = controller::undo,
-        onRedo = controller::redo,
-        undoEnabled = controller.undoEnabled,
-        redoEnabled = controller.redoEnabled,
+    )
+}
+
+/** The suggestion strip and tag toolbar for the field being typed in. */
+@Composable
+internal fun ControlledSuggestionDock(
+    controller: PromptFieldController,
+    autocompleteAvailable: Boolean,
+    modifier: Modifier = Modifier,
+    progress: (() -> Float)? = null,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
+    PromptSuggestionDock(
+        suggestions = controller.suggestions,
+        highlightQuery = controller.activeQuery,
+        showSuggestions = autocompleteAvailable,
+        onSuggestionClick = controller::applySuggestion,
         onAddTag = {
             controller.runTagAction(TagAutocompleteRepository::appendTagAfterActive)
         },
@@ -285,5 +306,13 @@ internal fun ControlledPromptTagTextField(
                 TagAutocompleteRepository.adjustActiveTagWeight(text, sel, -0.1)
             }
         },
+        onInsertBreak = controller::insertBreak,
+        onUndo = controller::undo,
+        onRedo = controller::redo,
+        undoEnabled = controller.undoEnabled,
+        redoEnabled = controller.redoEnabled,
+        modifier = modifier,
+        progress = progress,
+        trailing = trailing,
     )
 }
