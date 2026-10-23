@@ -25,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,7 +40,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.xororz.localdream.R
+import io.github.xororz.localdream.data.DitResolution
+import io.github.xororz.localdream.data.GenerationDefaults
 import io.github.xororz.localdream.data.Resolution
+import io.github.xororz.localdream.ui.components.ParamSlider
 import kotlin.math.roundToInt
 
 /**
@@ -67,6 +69,8 @@ internal fun AdvancedSettingsDialog(
     useOpenCL: Boolean,
     batchCounts: Int,
     denoiseStrength: Float,
+    cfgRescale: Float,
+    cfgCutoff: Float,
     seed: String,
     returnedSeed: Long?,
     onAspectRatioSelected: (String) -> Unit,
@@ -82,6 +86,8 @@ internal fun AdvancedSettingsDialog(
     onGpuSelected: () -> Unit,
     onBatchCountsChange: (Float) -> Unit,
     onDenoiseStrengthChange: (Float) -> Unit,
+    onCfgRescaleChange: (Float) -> Unit,
+    onCfgCutoffChange: (Float) -> Unit,
     onSeedChange: (String) -> Unit,
     onUseLastSeed: () -> Unit,
     onImportFromClipboard: () -> Unit,
@@ -181,31 +187,23 @@ internal fun AdvancedSettingsDialog(
                             stringResource(R.string.image_size, currentWidth, currentHeight),
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        Text(
-                            stringResource(R.string.width),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Slider(
+                        ParamSlider(
+                            label = "${stringResource(R.string.width)}: $currentWidth",
                             value = currentWidth.toFloat(),
                             onValueChange = onDitWidthChange,
                             valueRange = DIT_MIN_SIZE.toFloat()..DIT_MAX_SIZE.toFloat(),
-                            steps = DIT_SIZE_STEPS,
+                            step = DitResolution.SIZE_STEP.toFloat(),
                             enabled = !isRunning,
-                            modifier = Modifier.fillMaxWidth(),
+                            labelStyle = MaterialTheme.typography.bodySmall,
                         )
-                        Text(
-                            stringResource(R.string.height),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Slider(
+                        ParamSlider(
+                            label = "${stringResource(R.string.height)}: $currentHeight",
                             value = currentHeight.toFloat(),
                             onValueChange = onDitHeightChange,
                             valueRange = DIT_MIN_SIZE.toFloat()..DIT_MAX_SIZE.toFloat(),
-                            steps = DIT_SIZE_STEPS,
+                            step = DitResolution.SIZE_STEP.toFloat(),
                             enabled = !isRunning,
-                            modifier = Modifier.fillMaxWidth(),
+                            labelStyle = MaterialTheme.typography.bodySmall,
                         )
                     }
                 }
@@ -328,55 +326,64 @@ internal fun AdvancedSettingsDialog(
                     }
                 }
 
-                Column {
-                    Text(
-                        stringResource(R.string.steps, steps.roundToInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
-                        value = steps,
-                        onValueChange = onStepsChange,
-                        valueRange = 1f..50f,
-                        steps = 48,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                ParamSlider(
+                    label = stringResource(R.string.steps, steps.roundToInt()),
+                    value = steps,
+                    onValueChange = onStepsChange,
+                    valueRange = GenerationDefaults.STEPS_MIN..GenerationDefaults.STEPS_MAX,
+                    step = 1f,
+                )
 
-                Column {
-                    Text(
-                        "CFG Scale: %.1f".format(cfg),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
-                        value = cfg,
-                        onValueChange = onCfgChange,
-                        valueRange = 1f..30f,
-                        steps = 57,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                ParamSlider(
+                    label = "CFG Scale: %.1f".format(cfg),
+                    value = cfg,
+                    onValueChange = onCfgChange,
+                    valueRange = GenerationDefaults.CFG_MIN..GenerationDefaults.CFG_MAX,
+                    step = 0.1f,
+                )
+
+                // Both only change anything while CFG > 1: at CFG 1 the
+                // negative prompt is already skipped for every step.
+                ParamSlider(
+                    label = stringResource(R.string.cfg_rescale, cfgRescale),
+                    value = cfgRescale,
+                    onValueChange = onCfgRescaleChange,
+                    valueRange = 0f..1f,
+                    step = 0.05f,
+                    enabled = cfg > 1f,
+                )
+                // Shown as the share of final steps that skip the negative
+                // prompt (0 = off, on the left); stored as the CFG cutoff
+                // fraction the backend takes (1 - skipped share).
+                val skipShare = 1f - cfgCutoff
+                ParamSlider(
+                    label = if (skipShare <= 0f) {
+                        stringResource(R.string.cfg_cutoff_off)
+                    } else {
+                        stringResource(R.string.cfg_cutoff, (skipShare * 100).roundToInt())
+                    },
+                    value = skipShare,
+                    onValueChange = { onCfgCutoffChange(1f - it) },
+                    valueRange = 0f..0.9f,
+                    step = 0.05f,
+                    enabled = cfg > 1f,
+                )
                 // The free 128-512 slider belongs to SD1.5 CPU. SDXL MNN also runs
                 // on CPU/GPU but renders on the fixed 1024 canvas like every other
                 // SDXL package, so it must not be offered a range it cannot use.
                 // The runtime picker below stays for both.
                 if (runOnCpu && !isSdxl) {
-                    Column {
-                        Text(
-                            stringResource(
-                                R.string.image_size,
-                                currentWidth,
-                                currentHeight,
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Slider(
-                            value = currentWidth.toFloat(),
-                            onValueChange = onSizeChange,
-                            valueRange = 128f..512f,
-                            steps = 5,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                    ParamSlider(
+                        label = stringResource(
+                            R.string.image_size,
+                            currentWidth,
+                            currentHeight,
+                        ),
+                        value = currentWidth.toFloat(),
+                        onValueChange = onSizeChange,
+                        valueRange = 128f..512f,
+                        step = 64f,
+                    )
                 }
                 if (runOnCpu) {
                     Row(
@@ -413,33 +420,21 @@ internal fun AdvancedSettingsDialog(
                         }
                     }
                 }
-                Column {
-                    Text(
-                        stringResource(R.string.batch_count, batchCounts),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
-                        value = batchCounts.toFloat(),
-                        onValueChange = onBatchCountsChange,
-                        valueRange = 1f..10f,
-                        steps = 8,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                ParamSlider(
+                    label = stringResource(R.string.batch_count, batchCounts),
+                    value = batchCounts.toFloat(),
+                    onValueChange = onBatchCountsChange,
+                    valueRange = 1f..GenerationDefaults.BATCH_COUNT_MAX.toFloat(),
+                    step = 1f,
+                )
                 if (useImg2img) {
-                    Column {
-                        Text(
-                            "[img2img]Denoise Strength: %.2f".format(denoiseStrength),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Slider(
-                            value = denoiseStrength,
-                            onValueChange = onDenoiseStrengthChange,
-                            valueRange = 0f..1f,
-                            steps = 99,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                    ParamSlider(
+                        label = "[img2img]Denoise Strength: %.2f".format(denoiseStrength),
+                        value = denoiseStrength,
+                        onValueChange = onDenoiseStrengthChange,
+                        valueRange = 0f..1f,
+                        step = 0.01f,
+                    )
                 }
                 Column(
                     modifier = Modifier.fillMaxWidth(),

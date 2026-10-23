@@ -63,6 +63,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -93,7 +94,6 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -107,6 +107,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -146,6 +147,7 @@ import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.ModelRepository
 import io.github.xororz.localdream.data.ModelStorage
 import io.github.xororz.localdream.data.PatchScanner
+import io.github.xororz.localdream.data.PromptTemplate
 import io.github.xororz.localdream.data.RemoteRepository
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
@@ -159,6 +161,7 @@ import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.GenerationParamsDialog
 import io.github.xororz.localdream.ui.components.ImportParametersDialog
 import io.github.xororz.localdream.ui.components.OverlayIconButton
+import io.github.xororz.localdream.ui.components.ParamSlider
 import io.github.xororz.localdream.ui.components.ReproduceParametersDialog
 import io.github.xororz.localdream.ui.components.ShareParamsFlow
 import io.github.xororz.localdream.ui.components.SmoothLinearWavyProgressIndicator
@@ -240,6 +243,7 @@ fun ModelRunScreen(
     val msgNoImageAvailable = stringResource(R.string.no_image_available)
     val msgImageLoadFailed = stringResource(R.string.image_load_failed)
     val msgGenerationInterrupted = stringResource(R.string.generation_interrupted)
+    val msgQueueAdded = stringResource(R.string.queue_added)
     val msgRemoteSelectFailed = stringResource(R.string.remote_select_failed)
     // Reaches the screen with the repository already loaded on the normal
     // navigation path; resolves asynchronously after process recreation.
@@ -355,6 +359,21 @@ fun ModelRunScreen(
     var batchCounts by remember { mutableIntStateOf(GenerationDefaults.GLOBAL.batchCounts) }
     var scheduler by remember { mutableStateOf(GenerationDefaults.GLOBAL.scheduler) }
     var aspectRatio by remember { mutableStateOf(GenerationDefaults.GLOBAL.aspectRatio) }
+    var cfgRescale by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgRescale) }
+    var cfgCutoff by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgCutoff) }
+    var showPromptTemplates by remember { mutableStateOf(false) }
+    // Generation queue and X/Y plots (see GenerationQueue.kt).
+    val generationQueue = remember { mutableStateListOf<GenerationJob>() }
+    val xyPlots = remember { mutableMapOf<Long, XyPlotRun>() }
+    var nextJobId by remember { mutableLongStateOf(1L) }
+    var runnerActive by remember { mutableStateOf(false) }
+    var currentBatchTotal by remember { mutableIntStateOf(0) }
+    var showXyPlotDialog by remember { mutableStateOf(false) }
+    // Last X/Y inputs, so re-opening the dialog keeps them.
+    var xyLastX by remember { mutableStateOf(XyAxisType.CFG) }
+    var xyLastXValues by remember { mutableStateOf("") }
+    var xyLastY by remember { mutableStateOf(XyAxisType.NONE) }
+    var xyLastYValues by remember { mutableStateOf("") }
     var showCustomAspectRatioDialog by remember { mutableStateOf(false) }
     var currentBatchIndex by remember { mutableIntStateOf(0) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -642,6 +661,21 @@ fun ModelRunScreen(
         }
     }
 
+    var guidanceSaveJob: Job? by remember { mutableStateOf(null) }
+    LaunchedEffect(modelId) {
+        cfgRescale = generationPreferences.observeCfgRescale(modelId).first()
+        cfgCutoff = generationPreferences.observeCfgCutoff(modelId).first()
+    }
+    fun saveGuidanceParams() {
+        guidanceSaveJob?.cancel()
+        guidanceSaveJob = scope.launch(Dispatchers.IO) {
+            delay(500)
+            generationPreferences.saveGuidanceParams(modelId, cfgRescale, cfgCutoff)
+        }
+    }
+    val promptTemplates by generationPreferences.observePromptTemplates()
+        .collectAsState(initial = emptyList())
+
     fun saveUltrafixParams() {
         ultrafixSaveJob?.cancel()
         ultrafixSaveJob = scope.launch(Dispatchers.IO) {
@@ -714,7 +748,7 @@ fun ModelRunScreen(
 
     val onBatchCountsChange = remember {
         { value: Float ->
-            batchCounts = value.roundToInt().coerceIn(1, 10)
+            batchCounts = value.roundToInt().coerceIn(1, GenerationDefaults.BATCH_COUNT_MAX)
             saveAllFields()
         }
     }
@@ -1016,6 +1050,8 @@ fun ModelRunScreen(
                     putExtra("effective_height", bmp.height)
                     putExtra("denoise_strength", ultrafixDenoiseStrength)
                     putExtra("scheduler", scheduler)
+                    putExtra("cfg_rescale", cfgRescale)
+                    putExtra("cfg_cutoff", cfgCutoff)
                     putExtra("ultrafix", true)
                     putExtra("ultrafix_tile_size", tileSize)
                     putExtra("backend_host", backendHost)
@@ -1533,6 +1569,250 @@ fun ModelRunScreen(
         }
     }
 
+    // --- Generation runner: the live batch from the Generate button, then the
+    // queue (queued jobs and X/Y plot cells), one image at a time. ---
+
+    // A snapshot of the prompt page as a queueable job.
+    fun snapshotJob(count: Int, seedOverride: Long? = seed.toLongOrNull()): GenerationJob = GenerationJob(
+        id = nextJobId++,
+        prompt = promptField.text,
+        negativePrompt = negativePromptField.text,
+        steps = steps.roundToInt(),
+        cfg = cfg,
+        seed = seedOverride,
+        scheduler = scheduler,
+        denoiseStrength = denoiseStrength,
+        cfgRescale = cfgRescale,
+        cfgCutoff = cfgCutoff,
+        count = count,
+    )
+
+    // Runs one image through the service and waits for its terminal state.
+    // job == null reads the prompt page live, so edits made during a batch
+    // apply to its next image (the original batch behavior).
+    suspend fun runOneGeneration(
+        job: GenerationJob?,
+        batchIndex: Int,
+        editReferencePayloads: List<String>,
+    ): GenerationState {
+        val run = job ?: snapshotJob(1)
+        Log.d("ModelRunScreen", "preparing batch $batchIndex")
+        generationParamsTmp = GenerationParameters(
+            steps = run.steps,
+            cfg = run.cfg,
+            seed = 0,
+            prompt = run.prompt,
+            negativePrompt = run.negativePrompt,
+            generationTime = "",
+            width = currentWidth,
+            height = currentHeight,
+            runOnCpu = model?.runOnCpu ?: false,
+            denoiseStrength = run.denoiseStrength,
+            useOpenCL = useOpenCL,
+            scheduler = run.scheduler,
+        )
+
+        val batchIntent = Intent(
+            context,
+            BackgroundGenerationService::class.java,
+        ).apply {
+            putExtra("prompt", run.prompt)
+            putExtra("negative_prompt", run.negativePrompt)
+            putExtra("steps", run.steps)
+            putExtra("cfg", run.cfg)
+            run.seed?.let { putExtra("seed", it) }
+            putExtra("width", currentWidth)
+            putExtra("height", currentHeight)
+            // Backend now crops progress previews to the
+            // visible target rectangle, so the service must
+            // decode each preview with the effective dims
+            // (target_w/h), not the 1024 canvas size.
+            putExtra("effective_width", effectiveWidth)
+            putExtra("effective_height", effectiveHeight)
+            putExtra("denoise_strength", run.denoiseStrength)
+            putExtra("use_opencl", useOpenCL)
+            putExtra("scheduler", run.scheduler)
+            putExtra("cfg_rescale", run.cfgRescale)
+            putExtra("cfg_cutoff", run.cfgCutoff)
+            putExtra("aspect_ratio", aspectRatio)
+            putExtra("batch_index", batchIndex)
+            putExtra("backend_host", backendHost)
+            if (editReferencePayloads.isNotEmpty()) {
+                putExtra("has_reference_images", true)
+            }
+            if (selectedImageUri != null && base64EncodeDone) {
+                putExtra("has_image", true)
+                if (isInpaintMode && maskBitmap != null) {
+                    putExtra("has_mask", true)
+                }
+            }
+        }
+
+        Log.d("ModelRunScreen", "start service - batch $batchIndex")
+        context.startForegroundService(batchIntent)
+
+        val terminal = BackgroundGenerationService.generationState
+            .first { state ->
+                state is GenerationState.Complete ||
+                    state is GenerationState.Error
+            }
+
+        Log.d("ModelRunScreen", "batch $batchIndex completed, waiting for service to stop")
+
+        // Wait for service to actually stop
+        val waitStartTime = System.currentTimeMillis()
+        val stopped = withTimeoutOrNull(5000L) {
+            BackgroundGenerationService.isServiceRunning
+                .first { !it }
+        }
+        if (stopped == null) {
+            Log.w("ModelRunScreen", "Timeout waiting for service to stop")
+        }
+        Log.d(
+            "ModelRunScreen",
+            "service stopped, wait time: ${System.currentTimeMillis() - waitStartTime}ms",
+        )
+
+        BackgroundGenerationService.resetState()
+        return terminal
+    }
+
+    // Collects an X/Y plot cell; once the plot is complete the labelled grid
+    // is saved to history and shown as the current result.
+    fun onXyCellDone(cell: XyCell, state: GenerationState) {
+        val plot = xyPlots[cell.plotId] ?: return
+        if (state is GenerationState.Complete) plot.put(cell, state.bitmap) else plot.failed++
+        if (!plot.isDone) return
+        xyPlots.remove(cell.plotId)
+        coroutineScope.launch(Dispatchers.Default) {
+            val grid = plot.buildGrid() ?: return@launch
+            val params = plot.baseParams.copy(width = grid.width, height = grid.height)
+            val saved = historyManager.saveGeneratedImage(
+                modelId = modelId,
+                bitmap = grid,
+                params = params,
+                mode = params.mode,
+            )
+            withContext(Dispatchers.Main) {
+                currentBitmap = grid
+                generationParams = params
+                generationParamsModelId = modelId
+                currentDisplayedHistoryId = saved?.id
+                stitchableHistoryIds = emptySet()
+                imageVersion += 1
+            }
+        }
+    }
+
+    fun startGenerationRunner(includeLiveBatch: Boolean) {
+        if (runnerActive) return
+        pendingUltrafix = false
+        runnerActive = true
+        batchGenerationJob = coroutineScope.launch {
+            try {
+                // Freeze the selected reference set for the
+                // whole run and persist it immediately
+                // before the first service request. This
+                // also closes races with rapid thumbnail
+                // removals rewriting the scratch file.
+                val editReferencePayloads =
+                    if (supportsReferenceEditing) {
+                        editReferenceImages.map { it.base64 }
+                    } else {
+                        emptyList()
+                    }
+                if (editReferencePayloads.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        val json = JSONArray()
+                        editReferencePayloads.forEach { json.put(it) }
+                        File(context.filesDir, "dit_references.json")
+                            .writeText(json.toString())
+                    }
+                }
+                if (includeLiveBatch) {
+                    // If seed is set, only generate once regardless of batch count
+                    val actualBatchCount = if (seed.isNotBlank()) 1 else batchCounts
+                    Log.d("ModelRunScreen", "start generation batch: $actualBatchCount times")
+                    currentBatchTotal = actualBatchCount
+                    for (i in 0 until actualBatchCount) {
+                        currentBatchIndex = i + 1
+                        runOneGeneration(null, i, editReferencePayloads)
+                    }
+                }
+                while (generationQueue.isNotEmpty()) {
+                    val job = generationQueue.removeAt(0)
+                    currentBatchTotal = job.count
+                    for (i in 0 until job.count) {
+                        currentBatchIndex = i + 1
+                        val state = runOneGeneration(job, i, editReferencePayloads)
+                        job.xyCell?.let { onXyCellDone(it, state) }
+                    }
+                }
+            } finally {
+                currentBatchIndex = 0
+                currentBatchTotal = 0
+                isRunning = false
+                runnerActive = false
+                Log.d("ModelRunScreen", "all batches completed, isRunning set to false")
+            }
+        }
+    }
+
+    fun enqueueXyPlot(x: XyAxis, y: XyAxis) {
+        val plotId = nextJobId++
+        // One fixed seed for the whole sheet, so the cells differ only by the
+        // swept parameters (unless the sweep is the seed itself).
+        val plotSeed = seed.toLongOrNull() ?: kotlin.random.Random.nextLong(0, UInt.MAX_VALUE.toLong())
+        val base = snapshotJob(1, plotSeed)
+        val mode = when {
+            supportsReferenceEditing && (selectedImageUri != null || editReferenceImages.isNotEmpty()) ->
+                GenerationMode.EDIT
+
+            isInpaintMode -> GenerationMode.INPAINT
+
+            selectedImageUri != null -> GenerationMode.IMG2IMG
+
+            else -> GenerationMode.TXT2IMG
+        }
+        val plot = XyPlotRun(
+            id = plotId,
+            x = x,
+            y = y,
+            baseParams = GenerationParameters(
+                steps = base.steps,
+                cfg = base.cfg,
+                seed = plotSeed,
+                prompt = base.prompt,
+                negativePrompt = base.negativePrompt,
+                generationTime = null,
+                width = currentWidth,
+                height = currentHeight,
+                runOnCpu = model?.runOnCpu ?: false,
+                denoiseStrength = base.denoiseStrength,
+                useOpenCL = useOpenCL,
+                scheduler = base.scheduler,
+                mode = mode,
+            ),
+        )
+        xyPlots[plotId] = plot
+        val rows = maxOf(1, y.values.size)
+        for (r in 0 until rows) {
+            for (c in x.values.indices) {
+                var job = applyXyValue(base, x, c)
+                if (y.type != XyAxisType.NONE) job = applyXyValue(job, y, r)
+                val label = if (y.type == XyAxisType.NONE) {
+                    x.values[c]
+                } else {
+                    "${x.values[c]} / ${y.values[r]}"
+                }
+                generationQueue += job.copy(
+                    id = nextJobId++,
+                    xyCell = XyCell(plotId, c, r, label),
+                )
+            }
+        }
+    }
+
     LaunchedEffect(serviceState) {
         when (val state = serviceState) {
             is GenerationState.Progress -> {
@@ -1822,6 +2102,9 @@ fun ModelRunScreen(
                 promptField.replaceText(defaults.prompt)
                 negativePromptField.replaceText(defaults.negativePrompt)
                 denoiseStrength = defaults.denoiseStrength
+                cfgRescale = defaults.cfgRescale
+                cfgCutoff = defaults.cfgCutoff
+                saveGuidanceParams()
                 scope.launch(Dispatchers.IO) {
                     generationPreferences.saveAllFields(
                         modelId = modelId,
@@ -2019,6 +2302,13 @@ fun ModelRunScreen(
                                         }
                                     }
                                 }
+                                IconButton(onClick = { showPromptTemplates = true }) {
+                                    Icon(
+                                        Icons.Default.BookmarkBorder,
+                                        contentDescription = stringResource(R.string.prompt_templates),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
                                 TextButton(
                                     onClick = { showAdvancedSettings = true },
                                     contentPadding = PaddingValues(
@@ -2037,6 +2327,54 @@ fun ModelRunScreen(
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
+                            }
+                            if (showPromptTemplates) {
+                                PromptTemplatesDialog(
+                                    templates = promptTemplates,
+                                    canSaveCurrent = promptField.text.isNotBlank() ||
+                                        negativePromptField.text.isNotBlank(),
+                                    onApply = { template ->
+                                        promptField.replaceText(template.prompt)
+                                        if (template.negativePrompt.isNotBlank()) {
+                                            negativePromptField.replaceText(template.negativePrompt)
+                                        }
+                                        saveAllFields()
+                                        showPromptTemplates = false
+                                    },
+                                    onAppend = { template ->
+                                        promptField.replaceText(
+                                            PromptTemplate.appendTo(promptField.text, template.prompt),
+                                        )
+                                        negativePromptField.replaceText(
+                                            PromptTemplate.appendTo(
+                                                negativePromptField.text,
+                                                template.negativePrompt,
+                                            ),
+                                        )
+                                        saveAllFields()
+                                        showPromptTemplates = false
+                                    },
+                                    onDelete = { template ->
+                                        scope.launch(Dispatchers.IO) {
+                                            generationPreferences.savePromptTemplates(
+                                                promptTemplates.filterNot { it.name == template.name },
+                                            )
+                                        }
+                                    },
+                                    onSaveCurrent = { name ->
+                                        val template = PromptTemplate(
+                                            name = name,
+                                            prompt = promptField.text,
+                                            negativePrompt = negativePromptField.text,
+                                        )
+                                        scope.launch(Dispatchers.IO) {
+                                            generationPreferences.savePromptTemplates(
+                                                promptTemplates.filterNot { it.name == name } + template,
+                                            )
+                                        }
+                                    },
+                                    onDismiss = { showPromptTemplates = false },
+                                )
                             }
                             if (showAdvancedSettings) {
                                 AdvancedSettingsDialog(
@@ -2057,6 +2395,8 @@ fun ModelRunScreen(
                                     useOpenCL = useOpenCL,
                                     batchCounts = batchCounts,
                                     denoiseStrength = denoiseStrength,
+                                    cfgRescale = cfgRescale,
+                                    cfgCutoff = cfgCutoff,
                                     seed = seed,
                                     returnedSeed = returnedSeed,
                                     onAspectRatioSelected = { ratio ->
@@ -2096,6 +2436,14 @@ fun ModelRunScreen(
                                     onGpuSelected = { showOpenCLWarningDialog = true },
                                     onBatchCountsChange = onBatchCountsChange,
                                     onDenoiseStrengthChange = onDenoiseStrengthChange,
+                                    onCfgRescaleChange = { value ->
+                                        cfgRescale = value
+                                        saveGuidanceParams()
+                                    },
+                                    onCfgCutoffChange = { value ->
+                                        cfgCutoff = value
+                                        saveGuidanceParams()
+                                    },
                                     onSeedChange = onSeedChange,
                                     onUseLastSeed = {
                                         seed = returnedSeed.toString()
@@ -2188,177 +2536,11 @@ fun ModelRunScreen(
                         Button(
                             onClick = {
                                 focusManager.clearFocus()
-                                pendingUltrafix = false
-                                Log.d(
-                                    "ModelRunScreen",
-                                    "start generation",
-                                )
-                                generationParamsTmp = GenerationParameters(
-                                    steps = steps.roundToInt(),
-                                    cfg = cfg,
-                                    seed = 0,
-                                    prompt = promptField.text,
-                                    negativePrompt = negativePromptField.text,
-                                    generationTime = "",
-                                    width = currentWidth,
-                                    height = currentHeight,
-                                    runOnCpu = model?.runOnCpu ?: false,
-                                    denoiseStrength = denoiseStrength,
-                                    useOpenCL = useOpenCL,
-                                    scheduler = scheduler,
-                                )
-
-                                Log.d(
-                                    "ModelRunScreen",
-                                    "start generation batch: $batchCounts times",
-                                )
-
-                                // If seed is set, only generate once regardless of batch count
-                                val actualBatchCount =
-                                    if (seed.isNotBlank()) 1 else batchCounts
-
-                                batchGenerationJob = coroutineScope.launch {
-                                    // Freeze the selected reference set for the
-                                    // whole batch and persist it immediately
-                                    // before the first service request. This
-                                    // also closes races with rapid thumbnail
-                                    // removals rewriting the scratch file.
-                                    val editReferencePayloads =
-                                        if (supportsReferenceEditing) {
-                                            editReferenceImages.map { it.base64 }
-                                        } else {
-                                            emptyList()
-                                        }
-                                    if (editReferencePayloads.isNotEmpty()) {
-                                        withContext(Dispatchers.IO) {
-                                            val json = JSONArray()
-                                            editReferencePayloads.forEach { json.put(it) }
-                                            File(context.filesDir, "dit_references.json")
-                                                .writeText(json.toString())
-                                        }
-                                    }
-                                    for (i in 0 until actualBatchCount) {
-                                        currentBatchIndex = i + 1
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "preparing batch $i",
-                                        )
-
-                                        // Update generationParamsTmp to reflect current parameters
-                                        // This allows parameters to be changed during batch execution
-                                        generationParamsTmp = GenerationParameters(
-                                            steps = steps.roundToInt(),
-                                            cfg = cfg,
-                                            seed = 0,
-                                            prompt = promptField.text,
-                                            negativePrompt = negativePromptField.text,
-                                            generationTime = "",
-                                            width = currentWidth,
-                                            height = currentHeight,
-                                            runOnCpu = model?.runOnCpu ?: false,
-                                            denoiseStrength = denoiseStrength,
-                                            useOpenCL = useOpenCL,
-                                            scheduler = scheduler,
-                                        )
-
-                                        val batchIntent = Intent(
-                                            context,
-                                            BackgroundGenerationService::class.java,
-                                        ).apply {
-                                            putExtra("prompt", promptField.text)
-                                            putExtra(
-                                                "negative_prompt",
-                                                negativePromptField.text,
-                                            )
-                                            putExtra("steps", steps.roundToInt())
-                                            putExtra("cfg", cfg)
-                                            seed.toLongOrNull()
-                                                ?.let { putExtra("seed", it) }
-                                            putExtra("width", currentWidth)
-                                            putExtra("height", currentHeight)
-                                            // Backend now crops progress previews to the
-                                            // visible target rectangle, so the service must
-                                            // decode each preview with the effective dims
-                                            // (target_w/h), not the 1024 canvas size.
-                                            putExtra("effective_width", effectiveWidth)
-                                            putExtra("effective_height", effectiveHeight)
-                                            putExtra(
-                                                "denoise_strength",
-                                                denoiseStrength,
-                                            )
-                                            putExtra("use_opencl", useOpenCL)
-                                            putExtra("scheduler", scheduler)
-                                            putExtra("aspect_ratio", aspectRatio)
-                                            putExtra("batch_index", i)
-                                            putExtra("backend_host", backendHost)
-                                            if (editReferencePayloads.isNotEmpty()) {
-                                                putExtra("has_reference_images", true)
-                                            }
-                                            if (selectedImageUri != null && base64EncodeDone) {
-                                                putExtra("has_image", true)
-                                                if (isInpaintMode && maskBitmap != null) {
-                                                    putExtra("has_mask", true)
-                                                }
-                                            }
-                                        }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "start service - batch $i",
-                                        )
-
-                                        context.startForegroundService(batchIntent)
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "start service sent - batch $i",
-                                        )
-
-                                        BackgroundGenerationService.generationState
-                                            .first { state ->
-                                                state is GenerationState.Complete ||
-                                                    state is GenerationState.Error
-                                            }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "batch $i completed, waiting for service to stop",
-                                        )
-
-                                        // Wait for service to actually stop
-                                        val waitStartTime =
-                                            System.currentTimeMillis()
-                                        val stopped = withTimeoutOrNull(5000L) {
-                                            BackgroundGenerationService.isServiceRunning
-                                                .first { !it }
-                                        }
-                                        if (stopped == null) {
-                                            Log.w(
-                                                "ModelRunScreen",
-                                                "Timeout waiting for service to stop",
-                                            )
-                                        }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "service stopped, wait time: ${System.currentTimeMillis() - waitStartTime}ms",
-                                        )
-
-                                        BackgroundGenerationService.resetState()
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "service state reset, ready for next batch",
-                                        )
-                                    }
-                                    currentBatchIndex = 0
-                                    isRunning = false
-                                    Log.d(
-                                        "ModelRunScreen",
-                                        "all batches completed, isRunning set to false",
-                                    )
-                                }
+                                Log.d("ModelRunScreen", "start generation")
+                                startGenerationRunner(includeLiveBatch = true)
                             },
                             enabled = serviceState !is GenerationState.Progress &&
-                                !isRunning && !isUpscaling && !isUltrafixPreparing &&
+                                !isRunning && !runnerActive && !isUpscaling && !isUltrafixPreparing &&
                                 (selectedImageUri == null || base64EncodeDone),
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
@@ -2391,8 +2573,67 @@ fun ModelRunScreen(
                                 }
                             }
                         }
+                        GenerationExtrasRow(
+                            onAddToQueue = {
+                                focusManager.clearFocus()
+                                val count = if (seed.isNotBlank()) 1 else batchCounts
+                                generationQueue += snapshotJob(count)
+                                Toast.makeText(context, msgQueueAdded, Toast.LENGTH_SHORT).show()
+                            },
+                            onXyPlot = {
+                                focusManager.clearFocus()
+                                showXyPlotDialog = true
+                            },
+                            enabled = !isUpscaling && !isUltrafixPreparing &&
+                                (selectedImageUri == null || base64EncodeDone),
+                        )
                     }
                 }
+            }
+            AnimatedVisibility(
+                visible = generationQueue.isNotEmpty(),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                GenerationQueueCard(
+                    jobs = generationQueue.toList(),
+                    canStart = !runnerActive && !isRunning && !isUpscaling &&
+                        serviceState !is GenerationState.Progress,
+                    onStart = { startGenerationRunner(includeLiveBatch = false) },
+                    onRemove = { job ->
+                        generationQueue.remove(job)
+                        job.xyCell?.let { cell ->
+                            xyPlots[cell.plotId]?.let { plot ->
+                                plot.failed++
+                                if (plot.isDone) xyPlots.remove(cell.plotId)
+                            }
+                        }
+                    },
+                    onClear = {
+                        generationQueue.clear()
+                        xyPlots.clear()
+                    },
+                )
+            }
+            if (showXyPlotDialog) {
+                XyPlotDialog(
+                    useImg2img = selectedImageUri != null,
+                    baseCfg = cfg,
+                    initialX = xyLastX,
+                    initialXValues = xyLastXValues,
+                    initialY = xyLastY,
+                    initialYValues = xyLastYValues,
+                    onStart = { x, y, xRaw, yRaw ->
+                        xyLastX = x.type
+                        xyLastXValues = xRaw
+                        xyLastY = y.type
+                        xyLastYValues = yRaw
+                        showXyPlotDialog = false
+                        enqueueXyPlot(x, y)
+                        if (!runnerActive && !isRunning) startGenerationRunner(includeLiveBatch = false)
+                    },
+                    onDismiss = { showXyPlotDialog = false },
+                )
             }
             AnimatedVisibility(
                 visible = errorMessage != null,
@@ -2439,17 +2680,14 @@ fun ModelRunScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        val queuedCount = generationQueue.sumOf { it.count }
                         Text(
-                            text = if (currentBatchIndex > 0) {
-                                "${
-                                    stringResource(
-                                        R.string.generating,
-                                    )
-                                } ($currentBatchIndex/$batchCounts)…"
-                            } else {
-                                stringResource(
-                                    R.string.generating,
-                                )
+                            text = buildString {
+                                append(stringResource(R.string.generating))
+                                if (currentBatchIndex > 0 && currentBatchTotal > 1) {
+                                    append(" ($currentBatchIndex/$currentBatchTotal)")
+                                }
+                                append("…")
                             },
                             style = MaterialTheme.typography.titleMedium,
                         )
@@ -2457,11 +2695,35 @@ fun ModelRunScreen(
                             progress = progress,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Text(
-                            "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            // Rough time left for this image, from the elapsed time
+                            // and progress so far (skipped until there is a signal).
+                            val eta = generationStartTime?.let { start ->
+                                val elapsed = System.currentTimeMillis() - start
+                                if (progress in 0.05f..0.999f) {
+                                    (elapsed * (1f - progress) / progress / 1000f).roundToInt()
+                                } else {
+                                    null
+                                }
+                            }
+                            val status = listOfNotNull(
+                                eta?.let { stringResource(R.string.time_left, formatSeconds(it)) },
+                                queuedCount.takeIf { it > 0 }?.let { stringResource(R.string.queue_pending, it) },
+                            ).joinToString(" · ")
+                            if (status.isNotEmpty()) {
+                                Text(
+                                    status,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         intermediateBitmap?.let { bitmap ->
                             Spacer(modifier = Modifier.height(8.dp))
                             Card(
@@ -3239,11 +3501,8 @@ fun ModelRunScreen(
                     // tightens the denoise-step cap below.
                     val denoiseStepsMax =
                         minOf(GenerationDefaults.ULTRAFIX_DENOISE_STEPS_MAX, ultrafixSteps.roundToInt())
-                    Text(
-                        stringResource(R.string.steps, ultrafixSteps.roundToInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.steps, ultrafixSteps.roundToInt()),
                         value = ultrafixSteps,
                         onValueChange = {
                             ultrafixSteps = it
@@ -3253,25 +3512,20 @@ fun ModelRunScreen(
                             saveUltrafixParams()
                         },
                         valueRange = GenerationDefaults.ULTRAFIX_STEPS_MIN..GenerationDefaults.ULTRAFIX_STEPS_MAX,
-                        steps = 18,
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Independent UltraFix denoise steps (0..min(10, steps)):
                     // how many of the total steps actually denoise.
-                    Text(
-                        stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
                         value = ultrafixDenoiseSteps.toFloat(),
                         onValueChange = {
                             ultrafixDenoiseSteps = it.roundToInt()
                             saveUltrafixParams()
                         },
                         valueRange = 0f..denoiseStepsMax.toFloat(),
-                        steps = (denoiseStepsMax - 1).coerceAtLeast(0),
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Quality-denoise toggle: run UltraFix on neutral quality
@@ -4020,4 +4274,11 @@ private fun PromptCountLabel(label: String, count: Int, max: Int, showCount: Boo
             Text(if (max == 0) "$count/∞" else "$count/$max")
         }
     }
+}
+
+/** "42s" / "3m 05s" for the progress card's time-left estimate. */
+private fun formatSeconds(seconds: Int): String = if (seconds < 60) {
+    "${seconds}s"
+} else {
+    String.format(Locale.US, "%dm %02ds", seconds / 60, seconds % 60)
 }

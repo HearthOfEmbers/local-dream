@@ -84,6 +84,9 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
     req.height = 1024;
   }
   req.denoise_strength = json.value("denoise_strength", 0.6f);
+  req.cfg_rescale = std::clamp(json.value("cfg_rescale", 0.0f), 0.0f, 1.0f);
+  req.cfg_cutoff = std::clamp(json.value("cfg_cutoff", 1.0f), 0.0f, 1.0f);
+  req.preview_approx = json.value("preview_mode", "full") == "approx";
 
   auto sanitize_format = [](std::string f) {
     return (f == "jpeg" || f == "png") ? f : std::string("raw");

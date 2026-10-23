@@ -35,7 +35,7 @@ foreach(arch 68 69 73 75 79 81 85)
         DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/qnnlibs")
 endforeach()
 
-if(WIN32)
+if(CMAKE_HOST_WIN32)
     set(PLATFORM_NAME "windows")
     set(HOST_TAG "windows-x86_64")
 else()

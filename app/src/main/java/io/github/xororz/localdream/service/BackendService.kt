@@ -61,6 +61,12 @@ class BackendService : Service() {
         private const val TAG = "BackendService"
         private const val EXECUTABLE_NAME = "libstable_diffusion_core.so"
         const val RUNTIME_DIR = "runtime_libs"
+
+        // app_prefs key: start NPU backends with --long_prompt (prompts up to
+        // 231 tokens on models whose UNet is fixed at 77 tokens). Read when the
+        // backend starts, so a change applies the next time a model loads.
+        const val LONG_PROMPT_PREF = "long_prompt_npu"
+
         private const val RUNTIME_VERSION = "qnn_2_51_0_260929"
         private const val RUNTIME_VERSION_FILE = ".runtime_version"
         private const val NOTIFICATION_ID = 2
@@ -590,6 +596,13 @@ class BackendService : Service() {
                 if (preferences.getBoolean("anima_seq_dit", false)) {
                     command += "--anima_seq_dit"
                 }
+            }
+            // Long prompts on a 77-token NPU UNet: one pass per 77-token chunk.
+            // SDXL packages with their own 154/231 patches ignore the flag.
+            if ((backendType == "sd15npu" || backendType == "sdxl") &&
+                preferences.getBoolean(LONG_PROMPT_PREF, false)
+            ) {
+                command += "--long_prompt"
             }
             if (listenOnAll) {
                 command += "--listen_all"

@@ -83,6 +83,10 @@ struct ServerOptions {
   bool no_img2img = false;
   bool lowram = false;
   bool anima_seq_dit = false;  // (anima+lowram) never co-resident DiT halves
+  // (sd15npu, sdxl without length patches) accept up to 3 CLIP chunks (231
+  // tokens). The 77-token UNet runs once per chunk and the predictions are
+  // averaged.
+  bool long_prompt = false;
   bool upscaler_mode = false;
   bool convert_mode = false;
   // Run all three DiT modules on the Hexagon NPU. The Android catalog only
@@ -145,6 +149,8 @@ static void showHelp() {
          "  --lowram               (sdxl/anima) load/release models per stage\n"
          "  --anima_seq_dit        (anima+lowram) never keep both DiT halves "
          "resident; for 12GB devices\n"
+         "  --long_prompt          (sd15npu/sdxl) prompts up to 231 tokens, one "
+         "UNet pass per 77-token chunk\n"
          "  --clip_skip_2          (convert) export CLIP with skip 2\n"
          "  --log_level <n>        QNN log level\n"
          "  --version              Print QNN SDK build id\n"
@@ -177,6 +183,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
     OPT_UPSCALER_MODE,
     OPT_LOWRAM,
     OPT_ANIMA_SEQ_DIT,
+    OPT_LONG_PROMPT,
     OPT_LOG_LEVEL
   };
   static struct pal::Option s_longOptions[] = {
@@ -197,6 +204,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
       {"upscaler_mode", pal::no_argument, NULL, OPT_UPSCALER_MODE},
       {"lowram", pal::no_argument, NULL, OPT_LOWRAM},
       {"anima_seq_dit", pal::no_argument, NULL, OPT_ANIMA_SEQ_DIT},
+      {"long_prompt", pal::no_argument, NULL, OPT_LONG_PROMPT},
       {"log_level", pal::required_argument, NULL, OPT_LOG_LEVEL},
       {NULL, 0, NULL, 0}};
 
@@ -260,6 +268,9 @@ static ServerOptions processCommandLine(int argc, char **argv) {
         break;
       case OPT_ANIMA_SEQ_DIT:
         opts.anima_seq_dit = true;
+        break;
+      case OPT_LONG_PROMPT:
+        opts.long_prompt = true;
         break;
       case OPT_LOG_LEVEL:
         logLevel = sample_app::parseLogLevel(pal::g_optArg);
@@ -831,6 +842,13 @@ int main(int argc, char **argv) {
       else if (std::filesystem::exists(model_dir / "154.patch"))
         max_chunks = std::filesystem::exists(model_dir / "231.patch") ? 3 : 2;
     }
+    // --long_prompt on a 77-token NPU UNet (sd15npu, or an sdxl package
+    // without 154/231 patches): CLIP encodes up to 3 chunks and the pipeline
+    // averages one UNet pass per chunk instead of needing a longer graph.
+    if (opts.long_prompt && max_chunks == 1 &&
+        (opts.type == ServerOptions::ModelType::kSd15Npu ||
+         opts.type == ServerOptions::ModelType::kSdxl))
+      max_chunks = 3;
     text_encoder = std::make_unique<TextEncoder>(opts.isSdxl(), opts.isAnima(), max_chunks, fixed_chunks);
     try {
       const std::filesystem::path mdir(opts.model_dir);
