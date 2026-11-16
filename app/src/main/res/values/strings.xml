@@ -575,6 +575,8 @@
     <string name="done">Done</string>
     <string name="stop">Stop</string>
     <string name="live_preview">Live preview</string>
+    <string name="maximize_preview">Maximize preview</string>
+    <string name="minimize_preview">Minimize preview</string>
     <string name="chip_steps">%d steps</string>
     <string name="chip_seed_random">Random seed</string>
     <string name="chip_seed">Seed %s</string>

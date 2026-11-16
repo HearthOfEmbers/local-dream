@@ -564,6 +564,8 @@
     <string name="done">완료</string>
     <string name="stop">중지</string>
     <string name="live_preview">실시간 미리보기</string>
+    <string name="maximize_preview">미리보기 최대화</string>
+    <string name="minimize_preview">미리보기 최소화</string>
     <string name="chip_steps">%d 스텝</string>
     <string name="chip_seed_random">랜덤 시드</string>
     <string name="chip_seed">시드 %s</string>

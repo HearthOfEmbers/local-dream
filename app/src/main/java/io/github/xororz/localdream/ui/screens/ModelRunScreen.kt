@@ -376,6 +376,9 @@ fun ModelRunScreen(
     // Chip on the prompt page whose quick-edit dialog is open.
     var quickParam by remember { mutableStateOf<QuickParam?>(null) }
     var showLivePreview by remember { mutableStateOf(false) }
+    // The progress slot's live preview starts maximized; minimizing it
+    // sticks until the user leaves this screen.
+    var previewMaximized by remember { mutableStateOf(true) }
     // Generation queue and X/Y plots (see GenerationQueue.kt).
     val generationQueue = remember { mutableStateListOf<GenerationJob>() }
     val xyPlots = remember { mutableMapOf<Long, XyPlotRun>() }
@@ -2858,6 +2861,13 @@ fun ModelRunScreen(
                             GenerationProgressSlot(
                                 progress = { progress },
                                 preview = intermediateBitmap,
+                                aspectRatio = intermediateBitmap
+                                    ?.let { it.width.toFloat() / it.height }
+                                    ?: (currentWidth.toFloat() / currentHeight.coerceAtLeast(1)),
+                                maximized = previewMaximized,
+                                // Leaves the prompt and chips in view above it.
+                                maxPreviewHeight = maxHeight * 0.55f,
+                                onToggleMaximized = { previewMaximized = !previewMaximized },
                                 batchIndex = currentBatchIndex,
                                 batchTotal = currentBatchTotal,
                                 queuedCount = generationQueue.sumOf { it.count },
