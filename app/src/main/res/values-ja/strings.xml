@@ -564,6 +564,8 @@
     <string name="done">完了</string>
     <string name="stop">停止</string>
     <string name="live_preview">ライブプレビュー</string>
+    <string name="maximize_preview">プレビューを最大化</string>
+    <string name="minimize_preview">プレビューを最小化</string>
     <string name="chip_steps">%d ステップ</string>
     <string name="chip_seed_random">ランダムシード</string>
     <string name="chip_seed">シード %s</string>

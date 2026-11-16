@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -20,17 +21,21 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -38,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -291,100 +297,186 @@ internal fun GenerationDock(
 }
 
 /**
- * The fixed-height progress slot: live preview on the left (tap to enlarge),
- * status, progress and a stop button on the right. Its height never changes
- * between "no preview yet" and "preview showing", so nothing around it moves.
+ * The progress slot. Maximized (the default) it shows the live preview at
+ * full width, as large as [maxPreviewHeight] allows, with the status row
+ * under it. Minimized it is the compact fixed-height row: preview on the
+ * left, status, progress and stop on the right. Tapping the preview opens it
+ * full screen in either mode.
  */
 @Composable
 internal fun GenerationProgressSlot(
     progress: () -> Float,
     preview: Bitmap?,
+    aspectRatio: Float,
+    maximized: Boolean,
+    maxPreviewHeight: Dp,
     batchIndex: Int,
     batchTotal: Int,
     queuedCount: Int,
     startTime: Long?,
+    onToggleMaximized: () -> Unit,
     onPreviewClick: () -> Unit,
     onStop: () -> Unit,
 ) {
-    Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(ProgressSlotHeight)
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                onClick = onPreviewClick,
-                enabled = preview != null,
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.size(ProgressSlotHeight - 16.dp),
-            ) {
-                if (preview != null) {
-                    Image(
-                        bitmap = preview.asImageBitmap(),
-                        contentDescription = stringResource(R.string.live_preview),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Default.HourglassTop,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+    Card(
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+    ) {
+        if (maximized) {
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = buildString {
-                            append(stringResource(R.string.generating))
-                            if (batchIndex > 0 && batchTotal > 1) append(" ($batchIndex/$batchTotal)")
-                            append("…")
-                        },
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    PreviewThumb(
+                        preview = preview,
+                        onClick = onPreviewClick,
+                        modifier = Modifier
+                            .heightIn(max = maxPreviewHeight)
+                            .aspectRatio(aspectRatio.coerceIn(0.25f, 4f), matchHeightConstraintsFirst = true),
                     )
-                    TextButton(
-                        onClick = onStop,
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                        modifier = Modifier.height(32.dp),
-                    ) {
-                        Text(stringResource(R.string.stop))
-                    }
                 }
-                val p = progress()
-                SmoothLinearWavyProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth())
-                // Rough time left for this image, from the elapsed time and
-                // progress so far (skipped until there is a signal).
-                val eta = startTime?.let { start ->
-                    val elapsed = System.currentTimeMillis() - start
-                    if (p in 0.05f..0.999f) (elapsed * (1f - p) / p / 1000f).roundToInt() else null
-                }
-                val status = listOfNotNull(
-                    "${(p * 100).toInt()}%",
-                    eta?.let { stringResource(R.string.time_left, formatSeconds(it)) },
-                    queuedCount.takeIf { it > 0 }?.let { stringResource(R.string.queue_pending, it) },
-                ).joinToString(" · ")
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                ProgressStatus(
+                    progress = progress,
+                    maximized = true,
+                    batchIndex = batchIndex,
+                    batchTotal = batchTotal,
+                    queuedCount = queuedCount,
+                    startTime = startTime,
+                    onToggleMaximized = onToggleMaximized,
+                    onStop = onStop,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(ProgressSlotHeight)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PreviewThumb(
+                    preview = preview,
+                    onClick = onPreviewClick,
+                    modifier = Modifier.size(ProgressSlotHeight - 16.dp),
+                )
+                ProgressStatus(
+                    progress = progress,
+                    maximized = false,
+                    batchIndex = batchIndex,
+                    batchTotal = batchTotal,
+                    queuedCount = queuedCount,
+                    startTime = startTime,
+                    onToggleMaximized = onToggleMaximized,
+                    onStop = onStop,
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
+    }
+}
+
+/** The live preview tile, or an hourglass until the first preview arrives. */
+@Composable
+private fun PreviewThumb(preview: Bitmap?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        enabled = preview != null,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = modifier,
+    ) {
+        if (preview != null) {
+            Image(
+                bitmap = preview.asImageBitmap(),
+                contentDescription = stringResource(R.string.live_preview),
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.HourglassTop,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Title, minimize/maximize and stop, the progress bar, then percent, time left and queue. */
+@Composable
+private fun ProgressStatus(
+    progress: () -> Float,
+    maximized: Boolean,
+    batchIndex: Int,
+    batchTotal: Int,
+    queuedCount: Int,
+    startTime: Long?,
+    onToggleMaximized: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = buildString {
+                    append(stringResource(R.string.generating))
+                    if (batchIndex > 0 && batchTotal > 1) append(" ($batchIndex/$batchTotal)")
+                    append("…")
+                },
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onToggleMaximized, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (maximized) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                    contentDescription = stringResource(
+                        if (maximized) R.string.minimize_preview else R.string.maximize_preview,
+                    ),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            TextButton(
+                onClick = onStop,
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Text(stringResource(R.string.stop))
+            }
+        }
+        val p = progress()
+        SmoothLinearWavyProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth())
+        // Rough time left for this image, from the elapsed time and
+        // progress so far (skipped until there is a signal).
+        val eta = startTime?.let { start ->
+            val elapsed = System.currentTimeMillis() - start
+            if (p in 0.05f..0.999f) (elapsed * (1f - p) / p / 1000f).roundToInt() else null
+        }
+        val status = listOfNotNull(
+            "${(p * 100).toInt()}%",
+            eta?.let { stringResource(R.string.time_left, formatSeconds(it)) },
+            queuedCount.takeIf { it > 0 }?.let { stringResource(R.string.queue_pending, it) },
+        ).joinToString(" · ")
+        Text(
+            status,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
