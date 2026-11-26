@@ -31,6 +31,7 @@ class PipelineSd15Cpu : public Pipeline {
 
  protected:
   bool canSkipUncond() const override { return true; }
+  bool canSkipUncondMidRun() const override { return false; }
   bool previewSupported() const override { return false; }
 
   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,

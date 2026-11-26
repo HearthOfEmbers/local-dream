@@ -21,6 +21,10 @@ data class GenerationDefaults(
     val denoiseStrength: Float = 0.6f,
     val batchCounts: Int = 1,
     val aspectRatio: String = "1:1",
+    // Guidance rescale strength (0 = plain CFG) and the fraction of steps that
+    // run CFG before the negative prompt is skipped (1 = never skipped).
+    val cfgRescale: Float = 0f,
+    val cfgCutoff: Float = 1f,
     // UltraFix runs with its own steps/denoise, independent of the main params
     // above: a few-step, low-denoise pass tuned for the tiled repair regime.
     // Denoise is expressed as a step count (how many of the total steps actually
@@ -35,6 +39,13 @@ data class GenerationDefaults(
 ) {
     companion object {
         val GLOBAL = GenerationDefaults()
+
+        // Main parameter slider bounds, shared with config.json validation.
+        const val STEPS_MIN = 1f
+        const val STEPS_MAX = 100f
+        const val CFG_MIN = 1f
+        const val CFG_MAX = 30f
+        const val BATCH_COUNT_MAX = 100
 
         // UltraFix slider bounds (kept here so the persistence layer and the
         // dialog agree on the clamp range). Denoise steps are additionally

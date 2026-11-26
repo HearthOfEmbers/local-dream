@@ -47,7 +47,7 @@
 //   anima:   tokenizer.json tokenizer_t5.json token_emb.bin clip.bin
 //            unet_part1.bin unet_part2.bin vae_decoder.bin
 //            [vae_encoder.bin] (optional; enables img2img/inpaint)
-//   zimage/klein: tokenizer.json dit.safetensors llm.gguf vae.safetensors
+//   zimage/klein: tokenizer.json dit.safetensors (or dit.gguf) llm.gguf vae.safetensors
 //   qwen21:  tokenizer.json dit.safetensors llm.gguf llm_vision.gguf vae.safetensors
 //   krea2turbo: tokenizer.json dit.gguf llm.gguf llm_vision.gguf vae.safetensors
 // SD15/SDXL CLIP runs on MNN (CPU); Anima's CLIP (clip.bin) runs on QNN/HTP
@@ -83,11 +83,15 @@ struct ServerOptions {
   bool no_img2img = false;
   bool lowram = false;
   bool anima_seq_dit = false;  // (anima+lowram) never co-resident DiT halves
+  // (sd15npu, sdxl without length patches) accept up to 3 CLIP chunks (231
+  // tokens). The 77-token UNet runs once per chunk and the predictions are
+  // averaged.
+  bool long_prompt = false;
   bool upscaler_mode = false;
   bool convert_mode = false;
-  // Run all three DiT modules on the Hexagon NPU. The Android catalog only
-  // exposes these models on the SM8750-and-newer devices validated upstream.
+  // Run all three DiT modules on the Hexagon NPU.
   std::string dit_backend = "diffusion=HTP0,te=HTP0,vae=HTP0";
+  bool dit_convrot = false;
   // Load a component lazily and discard its parameters at runner_end(). This
   // keeps TE, DiT and VAE weights from remaining co-resident between stages;
   // intra-component segment prefetch remains enabled for throughput.
@@ -145,6 +149,9 @@ static void showHelp() {
          "  --lowram               (sdxl/anima) load/release models per stage\n"
          "  --anima_seq_dit        (anima+lowram) never keep both DiT halves "
          "resident; for 12GB devices\n"
+         "  --dit_convrot          Use dit-convrot.safetensors with TE on disk\n"
+         "  --long_prompt          (sd15npu/sdxl) prompts up to 231 tokens, one "
+         "UNet pass per 77-token chunk\n"
          "  --clip_skip_2          (convert) export CLIP with skip 2\n"
          "  --log_level <n>        QNN log level\n"
          "  --version              Print QNN SDK build id\n"
@@ -177,6 +184,8 @@ static ServerOptions processCommandLine(int argc, char **argv) {
     OPT_UPSCALER_MODE,
     OPT_LOWRAM,
     OPT_ANIMA_SEQ_DIT,
+    OPT_DIT_CONVROT,
+    OPT_LONG_PROMPT,
     OPT_LOG_LEVEL
   };
   static struct pal::Option s_longOptions[] = {
@@ -197,6 +206,8 @@ static ServerOptions processCommandLine(int argc, char **argv) {
       {"upscaler_mode", pal::no_argument, NULL, OPT_UPSCALER_MODE},
       {"lowram", pal::no_argument, NULL, OPT_LOWRAM},
       {"anima_seq_dit", pal::no_argument, NULL, OPT_ANIMA_SEQ_DIT},
+      {"dit_convrot", pal::no_argument, NULL, OPT_DIT_CONVROT},
+      {"long_prompt", pal::no_argument, NULL, OPT_LONG_PROMPT},
       {"log_level", pal::required_argument, NULL, OPT_LOG_LEVEL},
       {NULL, 0, NULL, 0}};
 
@@ -260,6 +271,12 @@ static ServerOptions processCommandLine(int argc, char **argv) {
         break;
       case OPT_ANIMA_SEQ_DIT:
         opts.anima_seq_dit = true;
+        break;
+      case OPT_DIT_CONVROT:
+        opts.dit_convrot = true;
+        break;
+      case OPT_LONG_PROMPT:
+        opts.long_prompt = true;
         break;
       case OPT_LOG_LEVEL:
         logLevel = sample_app::parseLogLevel(pal::g_optArg);
@@ -354,8 +371,10 @@ static std::unique_ptr<Pipeline> createPipeline(const ServerOptions &opts,
   // are copied from assets into the shared runtime directory at app startup.
   if (opts.isDit()) {
     std::string dit_path =
-        (dir / (opts.type == ServerOptions::ModelType::kKrea2Turbo
-                    ? "dit.gguf" : "dit.safetensors")).string();
+        (dir / (opts.dit_convrot ? "dit-convrot.safetensors" : "dit.safetensors"))
+            .string();
+    if (!opts.dit_convrot && !std::filesystem::exists(dit_path))
+      dit_path = (dir / "dit.gguf").string();
     std::string llm_path = (dir / "llm.gguf").string();
     std::string llm_vision_path =
         (opts.type == ServerOptions::ModelType::kQwenImage21 ||
@@ -384,7 +403,7 @@ static std::unique_ptr<Pipeline> createPipeline(const ServerOptions &opts,
     return std::make_unique<PipelineDit>(
         text_encoder, opts.model_dir, engine_path, dit_path, llm_path,
         llm_vision_path, vae_path, kind, opts.dit_backend,
-        opts.dit_params_backend,
+        opts.dit_convrot ? "te=disk" : opts.dit_params_backend,
         opts.dit_threads, opts.dit_vae_tile_size, !opts.no_img2img);
   }
 
@@ -831,6 +850,13 @@ int main(int argc, char **argv) {
       else if (std::filesystem::exists(model_dir / "154.patch"))
         max_chunks = std::filesystem::exists(model_dir / "231.patch") ? 3 : 2;
     }
+    // --long_prompt on a 77-token NPU UNet (sd15npu, or an sdxl package
+    // without 154/231 patches): CLIP encodes up to 3 chunks and the pipeline
+    // averages one UNet pass per chunk instead of needing a longer graph.
+    if (opts.long_prompt && max_chunks == 1 &&
+        (opts.type == ServerOptions::ModelType::kSd15Npu ||
+         opts.type == ServerOptions::ModelType::kSdxl))
+      max_chunks = 3;
     text_encoder = std::make_unique<TextEncoder>(opts.isSdxl(), opts.isAnima(), max_chunks, fixed_chunks);
     try {
       const std::filesystem::path mdir(opts.model_dir);

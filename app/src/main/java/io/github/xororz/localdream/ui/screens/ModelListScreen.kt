@@ -84,6 +84,8 @@ import io.github.xororz.localdream.R
 import io.github.xororz.localdream.data.*
 import io.github.xororz.localdream.data.DarkModePreference
 import io.github.xororz.localdream.navigation.Screen
+import io.github.xororz.localdream.service.BackendService
+import io.github.xororz.localdream.service.BackgroundGenerationService
 import io.github.xororz.localdream.service.ModelDownloadService
 import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.SmoothCircularWavyProgressIndicator
@@ -389,11 +391,20 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
 
     val listedModels = if (remoteActive) remoteRepository.models else modelRepository.models
     val cpuModels = remember(listedModels, pinnedIds) {
-        PinnedModels.sort(listedModels.filter { it.runOnCpu }, pinnedIds)
+        PinnedModels.sort(listedModels.filter { it.runOnCpu && !it.isDit }, pinnedIds)
     }
     val npuModels = remember(listedModels, pinnedIds) {
-        PinnedModels.sort(listedModels.filter { !it.runOnCpu }, pinnedIds)
+        PinnedModels.sort(listedModels.filter { !it.runOnCpu && !it.isDit }, pinnedIds)
     }
+    val ditModels = remember(listedModels, pinnedIds) {
+        PinnedModels.sort(listedModels.filter { it.isDit }, pinnedIds)
+    }
+
+    val tabTitles = listOf(
+        stringResource(R.string.cpu_models),
+        stringResource(R.string.npu_models),
+        stringResource(R.string.dit_models),
+    )
 
     val lastViewedPage = remember {
         val preferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -401,19 +412,14 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
     }
 
     val pagerState = rememberPagerState(
-        initialPage = lastViewedPage,
-        pageCount = { 2 },
+        initialPage = lastViewedPage.coerceIn(tabTitles.indices),
+        pageCount = { tabTitles.size },
     )
 
     LaunchedEffect(pagerState.currentPage) {
         val preferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         preferences.edit { putInt("last_viewed_page", pagerState.currentPage) }
     }
-
-    val tabTitles = listOf(
-        stringResource(R.string.cpu_models),
-        stringResource(R.string.npu_models),
-    )
 
     if (isSelectionMode) {
         BackHandler {
@@ -1036,7 +1042,11 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                 state = pagerState,
                 modifier = Modifier.weight(1f),
             ) { page ->
-                val models = if (page == 0) cpuModels else npuModels
+                val models = when (page) {
+                    0 -> cpuModels
+                    1 -> npuModels
+                    else -> ditModels
+                }
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -1153,10 +1163,10 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = if (page == 0) {
-                                            stringResource(R.string.no_cpu_models)
-                                        } else {
-                                            stringResource(R.string.no_npu_models)
+                                        text = when (page) {
+                                            0 -> stringResource(R.string.no_cpu_models)
+                                            1 -> stringResource(R.string.no_npu_models)
+                                            else -> stringResource(R.string.no_dit_models)
                                         },
                                         style = MaterialTheme.typography.bodyLarge,
                                         textAlign = TextAlign.Center,
@@ -1176,7 +1186,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                 horizontalArrangement = Arrangement.Center,
             ) {
                 TabPageIndicator(
-                    pageCount = 2,
+                    pageCount = pagerState.pageCount,
                     currentPage = pagerState.currentPage,
                 )
             }
@@ -1430,6 +1440,19 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         preferences.getBoolean("show_diffusion_process", false),
                                     )
                                 }
+                                var approxPreview by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(
+                                            BackgroundGenerationService.APPROX_PREVIEW_PREF,
+                                            BackgroundGenerationService.APPROX_PREVIEW_DEFAULT,
+                                        ),
+                                    )
+                                }
+                                var longPromptNpu by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean(BackendService.LONG_PROMPT_PREF, false),
+                                    )
+                                }
                                 var captureLogs by remember {
                                     mutableStateOf(
                                         preferences.getBoolean("enable_log_capture", false),
@@ -1596,6 +1619,20 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
                                         }
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                        )
+                                        SwitchSettingRow(
+                                            title = stringResource(R.string.approx_preview),
+                                            description = stringResource(R.string.approx_preview_hint),
+                                            checked = approxPreview,
+                                            onCheckedChange = {
+                                                approxPreview = it
+                                                preferences.edit {
+                                                    putBoolean(BackgroundGenerationService.APPROX_PREVIEW_PREF, it)
+                                                }
+                                            },
+                                        )
                                     }
                                 }
                                 HorizontalDivider(
@@ -1744,6 +1781,18 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                         }
                                     }
                                 }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                                SwitchSettingRow(
+                                    title = stringResource(R.string.long_prompt_npu),
+                                    description = stringResource(R.string.long_prompt_npu_hint),
+                                    checked = longPromptNpu,
+                                    onCheckedChange = {
+                                        longPromptNpu = it
+                                        preferences.edit { putBoolean(BackendService.LONG_PROMPT_PREF, it) }
+                                    },
+                                )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp),
                                 )

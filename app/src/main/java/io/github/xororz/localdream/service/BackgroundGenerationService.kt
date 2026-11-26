@@ -50,6 +50,11 @@ class BackgroundGenerationService : Service() {
         const val ACTION_STOP = "stop_generation"
         const val LOCAL_BACKEND_HOST = "localhost:8081"
 
+        // "Approx cheap" previews (app_prefs): a latent->RGB projection instead
+        // of a full VAE decode per preview step. On by default; much faster.
+        const val APPROX_PREVIEW_PREF = "approx_preview"
+        const val APPROX_PREVIEW_DEFAULT = true
+
         // Shared across generations; the long timeouts cover a single SDXL
         // request that can stream for many minutes.
         private val generationClient: OkHttpClient by lazy {
@@ -152,6 +157,8 @@ class BackgroundGenerationService : Service() {
         val denoiseStrength = intent.getFloatExtra("denoise_strength", 0.6f)
         val useOpenCL = intent.getBooleanExtra("use_opencl", false)
         val scheduler = intent.getStringExtra("scheduler") ?: "dpm"
+        val cfgRescale = intent.getFloatExtra("cfg_rescale", 0f)
+        val cfgCutoff = intent.getFloatExtra("cfg_cutoff", 1f)
         val aspectRatio = intent.getStringExtra("aspect_ratio") ?: "1:1"
         // Ultrafix: tiled img2img repair over an upscaled image. Uses its own
         // base-image file so a pending img2img selection in tmp.txt survives.
@@ -245,6 +252,8 @@ class BackgroundGenerationService : Service() {
                 denoiseStrength,
                 useOpenCL,
                 scheduler,
+                cfgRescale,
+                cfgCutoff,
                 aspectRatio,
                 ultrafix,
                 ultrafixTileSize,
@@ -272,6 +281,8 @@ class BackgroundGenerationService : Service() {
         denoiseStrength: Float,
         useOpenCL: Boolean,
         scheduler: String,
+        cfgRescale: Float,
+        cfgCutoff: Float,
         aspectRatio: String,
         ultrafix: Boolean,
         ultrafixTileSize: Int,
@@ -287,6 +298,7 @@ class BackgroundGenerationService : Service() {
                 applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             val showProcess = preferences.getBoolean("show_diffusion_process", false)
             val showStride = preferences.getInt("show_diffusion_stride", 1)
+            val approxPreview = preferences.getBoolean(APPROX_PREVIEW_PREF, APPROX_PREVIEW_DEFAULT)
 
             val jsonObject = JSONObject().apply {
                 put("prompt", prompt)
@@ -301,6 +313,11 @@ class BackgroundGenerationService : Service() {
                 put("denoise_strength", denoiseStrength)
                 put("use_opencl", useOpenCL)
                 put("scheduler", scheduler)
+                // Only sent when set, so the request stays identical for
+                // backends (and remote hosts) that predate these fields.
+                if (cfgRescale > 0f) put("cfg_rescale", cfgRescale.toDouble())
+                if (cfgCutoff < 1f) put("cfg_cutoff", cfgCutoff.toDouble())
+                if (approxPreview) put("preview_mode", "approx")
                 // Ultrafix never streams previews: each one would tile-decode
                 // the full image (the backend rejects it as well).
                 put("show_diffusion_process", if (ultrafix) false else showProcess)

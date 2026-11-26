@@ -58,9 +58,9 @@ data class ModelConfig(
             "lcm",
         )
 
-        // Keep in sync with the steps/cfg slider ranges in ModelRunScreen.
-        private val STEPS_RANGE = 1f..50f
-        private val CFG_RANGE = 1f..30f
+        // Same bounds as the steps/cfg sliders.
+        private val STEPS_RANGE = GenerationDefaults.STEPS_MIN..GenerationDefaults.STEPS_MAX
+        private val CFG_RANGE = GenerationDefaults.CFG_MIN..GenerationDefaults.CFG_MAX
 
         fun read(modelDir: File): ModelConfig? {
             val file = File(modelDir, FILE_NAME)
