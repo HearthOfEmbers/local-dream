@@ -60,6 +60,16 @@ struct GenerationRequest {
   int width = 512;
   int height = 512;
   float denoise_strength = 0.6f;
+  // Guidance rescale (Lin et al. 2023, "phi"): 0 = plain CFG, 1 = the CFG
+  // prediction fully rescaled to the std of the cond prediction. Tames the
+  // oversaturation / burn of high CFG.
+  float cfg_rescale = 0.0f;
+  // Fraction of the denoising steps that run classifier-free guidance; the
+  // remaining tail runs cond-only (negative prompt skipped). 1 = never cut.
+  float cfg_cutoff = 1.0f;
+  // Per-step previews from a linear latent->RGB projection instead of a full
+  // VAE decode ("Approx cheap"). Only for 4-channel SD/SDXL latents.
+  bool preview_approx = false;
   bool img2img = false;
   bool has_mask = false;
   std::vector<float> img_data;
@@ -158,6 +168,30 @@ inline std::unique_ptr<Scheduler> createScheduler(
   return std::make_unique<DPMSolverMultistepScheduler>(
       1000, 0.00085f, 0.012f, "scaled_linear", 2, "epsilon", timestep_spacing,
       use_karras);
+}
+
+// Classifier-free guidance with optional guidance rescale (Lin et al. 2023,
+// as in diffusers' rescale_noise_cfg): the CFG prediction is scaled toward the
+// std of the cond prediction, mixed by `rescale` in [0, 1].
+inline xt::xarray<float> applyGuidance(const xt::xarray<float> &uncond,
+                                       const xt::xarray<float> &txt, float cfg,
+                                       float rescale) {
+  xt::xarray<float> pred = xt::eval(uncond + cfg * (txt - uncond));
+  if (rescale <= 0.0f || pred.size() == 0) return pred;
+  auto stddev = [](const xt::xarray<float> &a) {
+    double sum = 0.0, sq = 0.0;
+    for (float v : a) {
+      sum += v;
+      sq += (double)v * v;
+    }
+    const double n = (double)a.size();
+    const double mean = sum / n;
+    return std::sqrt(std::max(0.0, sq / n - mean * mean));
+  };
+  const double std_cfg = stddev(pred);
+  if (std_cfg <= 0.0) return pred;
+  const float factor = (float)(stddev(txt) / std_cfg);
+  return xt::eval(pred * (rescale * factor + (1.0f - rescale)));
 }
 
 // Base class for the three model formats (sd15cpu / sd15npu / sdxl). The
@@ -277,6 +311,10 @@ class Pipeline {
   // halves separately (QNN) can skip it to halve UNet time; MNN runs both
   // in a single graph call so the optimization does not apply there.
   virtual bool canSkipUncond() const = 0;
+  // Whether the uncond pass can be dropped for only part of a run (the CFG
+  // cutoff tail). Backends whose UNet session batch is sized once per
+  // request from req.cfg (sd15cpu) cannot, and keep computing both halves.
+  virtual bool canSkipUncondMidRun() const { return canSkipUncond(); }
   virtual bool previewSupported() const = 0;
   // Tiled VAE encode/decode for outputs above the fixed graph size (QNN
   // formats only: MNN handles large resolutions natively).
@@ -371,6 +409,61 @@ class Pipeline {
     return std::vector<uint8_t>(u8_img.begin(), u8_img.end());
   }
 
+  // "Approx cheap" preview: a fixed linear latent->RGB projection (the
+  // per-format factors ComfyUI uses for its latent previews), bilinearly
+  // upsampled to out_w x out_h. Costs a few ms instead of a full VAE decode.
+  // `latents` is the model-space [1, 4, h, w] latent.
+  static std::vector<uint8_t> approxPreviewBytes(
+      const xt::xarray<float> &latents, bool sdxl, int out_w, int out_h) {
+    static const float kSd15[4][3] = {{0.3512f, 0.2297f, 0.3227f},
+                                      {0.3250f, 0.4974f, 0.2350f},
+                                      {-0.2829f, 0.1762f, 0.2721f},
+                                      {-0.2120f, -0.2616f, -0.7177f}};
+    static const float kSdxl[4][3] = {{0.3651f, 0.4232f, 0.4341f},
+                                      {-0.2533f, -0.0042f, 0.1068f},
+                                      {0.1076f, 0.1111f, -0.0362f},
+                                      {-0.3165f, -0.2492f, -0.2188f}};
+    static const float kSdxlBias[3] = {0.1084f, -0.0175f, -0.0011f};
+    const auto &f = sdxl ? kSdxl : kSd15;
+    const int lh = (int)latents.shape()[2];
+    const int lw = (int)latents.shape()[3];
+    const size_t plane = (size_t)lh * lw;
+    const float *src = latents.data();
+
+    std::vector<float> rgb(plane * 3);
+    for (size_t p = 0; p < plane; ++p) {
+      for (int c = 0; c < 3; ++c) {
+        float v = sdxl ? kSdxlBias[c] : 0.0f;
+        for (int k = 0; k < 4; ++k) v += src[k * plane + p] * f[k][c];
+        rgb[p * 3 + c] = v;
+      }
+    }
+
+    std::vector<uint8_t> out((size_t)out_w * out_h * 3);
+    const float sx = (float)lw / out_w, sy = (float)lh / out_h;
+    for (int y = 0; y < out_h; ++y) {
+      const float fy = std::clamp((y + 0.5f) * sy - 0.5f, 0.0f, (float)(lh - 1));
+      const int y0 = (int)fy, y1 = std::min(y0 + 1, lh - 1);
+      const float wy = fy - y0;
+      for (int x = 0; x < out_w; ++x) {
+        const float fx =
+            std::clamp((x + 0.5f) * sx - 0.5f, 0.0f, (float)(lw - 1));
+        const int x0 = (int)fx, x1 = std::min(x0 + 1, lw - 1);
+        const float wx = fx - x0;
+        for (int c = 0; c < 3; ++c) {
+          const float top = rgb[((size_t)y0 * lw + x0) * 3 + c] * (1 - wx) +
+                            rgb[((size_t)y0 * lw + x1) * 3 + c] * wx;
+          const float bot = rgb[((size_t)y1 * lw + x0) * 3 + c] * (1 - wx) +
+                            rgb[((size_t)y1 * lw + x1) * 3 + c] * wx;
+          const float v = (top * (1 - wy) + bot * wy + 1.0f) * 127.5f;
+          out[((size_t)y * out_w + x) * 3 + c] =
+              (uint8_t)std::clamp(v, 0.0f, 255.0f);
+        }
+      }
+    }
+    return out;
+  }
+
   // Crops the centered crop_w x crop_h region out of a w x h RGB byte image.
   static void cropCenter(std::vector<uint8_t> &data, int w, int h, int crop_w,
                          int crop_h) {
@@ -407,9 +500,13 @@ inline Conditioning Pipeline::encodePrompts(const GenerationRequest &req) {
   cond.pooled_dim = textPooledDim();
   cond.seq_len = text_encoder_.contextLength(req.prompt, req.negative_prompt);
   cond.hidden.assign((size_t)batch_size * cond.seq_len * cond.hidden_dim, 0.0f);
-  if (sdxl_) {
+  // Chunks that hold actual prompt text per side (the rest is padding). SD1.5
+  // only chunks in --long_prompt mode, where the NPU UNet averages over them.
+  if (sdxl_ || (!isAnima() && cond.seq_len > 77)) {
     cond.negative_chunks = std::min(cond.seq_len / 77, std::max(1, (text_encoder_.tokenizeInfo(req.negative_prompt).count + 72) / 75));
     cond.positive_chunks = std::min(cond.seq_len / 77, std::max(1, (text_encoder_.tokenizeInfo(req.prompt).count + 72) / 75));
+  }
+  if (sdxl_) {
     cond.pooled.assign((size_t)batch_size * cond.pooled_dim, 0.0f);
     cond.time_ids.assign((size_t)batch_size * 6, 0.0f);
     for (int b = 0; b < batch_size; b++) {
@@ -771,7 +868,7 @@ inline xt::xarray<float> Pipeline::runUnetTiled(
       xt::xarray<float> pred_batch = xt::adapt(tile_out, batch2_shape);
       xt::xarray<float> uncond = xt::view(pred_batch, 0);
       xt::xarray<float> txt = xt::view(pred_batch, 1);
-      pred = xt::eval(uncond + req.cfg * (txt - uncond));
+      pred = applyGuidance(uncond, txt, req.cfg, req.cfg_rescale);
       pred.reshape({1, 4, tile_lat, tile_lat});
     }
     pred_tiles.push_back(std::move(pred));
@@ -883,12 +980,16 @@ inline xt::xarray<float> Pipeline::ultrafixInvertNoise(
 inline std::string Pipeline::renderPreview(const GenerationRequest &req,
                                            const xt::xarray<float> &latents) {
   try {
-    xt::xarray<float> preview_latents = latents;
-    latentsToVae(preview_latents);
-    xt::xarray<float> pixels =
-        decodeToPixels(req, preview_latents, /*verbose=*/false);
-
-    std::vector<uint8_t> out_data = pixelsToBytes(pixels);
+    std::vector<uint8_t> out_data;
+    if (req.preview_approx && latentChannels() == 4) {
+      out_data = approxPreviewBytes(latents, sdxl_, req.width, req.height);
+    } else {
+      xt::xarray<float> preview_latents = latents;
+      latentsToVae(preview_latents);
+      xt::xarray<float> pixels =
+          decodeToPixels(req, preview_latents, /*verbose=*/false);
+      out_data = pixelsToBytes(pixels);
+    }
     int preview_w = req.width;
     int preview_h = req.height;
     if (needsAspectCrop(req)) {
@@ -1081,7 +1182,11 @@ inline GenerationResult Pipeline::generate(
     beginDenoise(req);
 
     for (int i = start_step; i < (int)timesteps.size(); ++i) {
-      if (req.show_diffusion_process && previewSupported() &&
+      // Approx previews need no VAE, so they also work where full previews
+      // are unavailable (lowram SDXL, CPU formats).
+      const bool can_preview =
+          previewSupported() || (req.preview_approx && latentChannels() == 4);
+      if (req.show_diffusion_process && can_preview &&
           (i - start_step) % req.show_diffusion_stride == 0) {
         progress_callback(current_step, total_run_steps,
                           renderPreview(req, latents));
@@ -1096,7 +1201,20 @@ inline GenerationResult Pipeline::generate(
       xt::xarray<float> latents_scaled =
           scheduler->scale_model_input(latents, current_ts);
 
-      const bool skip_uncond = canSkipUncond() && (req.cfg == 1.0f);
+      // CFG cutoff: once the configured fraction of the run's steps is done,
+      // the tail runs cond-only. Backends that can skip the uncond UNet pass
+      // then save that half of the step; the others still compute it but
+      // the prediction ignores it, so the result matches across backends.
+      const int run_steps = (int)timesteps.size() - start_step;
+      // Rounded with a small tolerance so 0.6 x 25 is 15 steps, not 16.
+      const int guided_steps =
+          (int)std::ceil(req.cfg_cutoff * (float)run_steps - 1e-4f);
+      const bool past_cutoff = req.cfg_cutoff < 1.0f && run_steps > 0 &&
+                               (i - start_step) >= guided_steps;
+      const bool guidance_off = (req.cfg == 1.0f) || past_cutoff;
+      const bool skip_uncond =
+          canSkipUncond() &&
+          (req.cfg == 1.0f || (past_cutoff && canSkipUncondMidRun()));
 
       xt::xarray<float> noise_pred;
       if (unet_tiled) {
@@ -1126,7 +1244,12 @@ inline GenerationResult Pipeline::generate(
               xt::adapt(unet_out_latents, shape_batch2);
           xt::xarray<float> uncond = xt::view(noise_pred_batch, 0);
           xt::xarray<float> txt = xt::view(noise_pred_batch, 1);
-          noise_pred = xt::eval(uncond + req.cfg * (txt - uncond));
+          if (guidance_off) {
+            noise_pred = xt::eval(txt);
+          } else {
+            noise_pred = applyGuidance(uncond, txt, req.cfg, req.cfg_rescale);
+          }
+          noise_pred.reshape(shape);
         }
       }
 

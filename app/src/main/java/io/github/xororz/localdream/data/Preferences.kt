@@ -33,6 +33,7 @@ class GenerationPreferences(private val context: Context) {
     private val BASE_URL_KEY = stringPreferencesKey("base_url")
     private val SELECTED_SOURCE_KEY = stringPreferencesKey("selected_source")
     private val SHARE_USE_BASE64_KEY = booleanPreferencesKey("share_use_base64")
+    private val PROMPT_TEMPLATES_KEY = stringPreferencesKey("prompt_templates")
     private val SHARE_CLEAR_CLIPBOARD_KEY =
         booleanPreferencesKey("share_clear_clipboard_on_import")
 
@@ -72,6 +73,44 @@ class GenerationPreferences(private val context: Context) {
             preferences[getUltrafixStepsKey(modelId)] = steps
             preferences[getUltrafixDenoiseStepsKey(modelId)] = denoiseSteps
             preferences[getUltrafixQualityDenoiseKey(modelId)] = qualityDenoise
+        }
+    }
+
+    // Guidance extras (CFG rescale, CFG cutoff), per model like the main
+    // params but stored outside saveAllFields so older call sites need no
+    // change.
+    private fun getCfgRescaleKey(modelId: String) = floatPreferencesKey("${modelId}_cfg_rescale")
+    private fun getCfgCutoffKey(modelId: String) = floatPreferencesKey("${modelId}_cfg_cutoff")
+
+    fun observeCfgRescale(modelId: String): Flow<Float> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { it[getCfgRescaleKey(modelId)] ?: GenerationDefaults.GLOBAL.cfgRescale }
+
+    fun observeCfgCutoff(modelId: String): Flow<Float> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { it[getCfgCutoffKey(modelId)] ?: GenerationDefaults.GLOBAL.cfgCutoff }
+
+    suspend fun saveGuidanceParams(modelId: String, cfgRescale: Float, cfgCutoff: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[getCfgRescaleKey(modelId)] = cfgRescale
+            preferences[getCfgCutoffKey(modelId)] = cfgCutoff
+        }
+    }
+
+    // Prompt templates are global (shared by every model).
+    fun observePromptTemplates(): Flow<List<PromptTemplate>> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { PromptTemplate.decodeList(it[PROMPT_TEMPLATES_KEY]) }
+
+    suspend fun savePromptTemplates(templates: List<PromptTemplate>) {
+        context.dataStore.edit { preferences ->
+            preferences[PROMPT_TEMPLATES_KEY] = PromptTemplate.encodeList(templates)
         }
     }
 
@@ -233,6 +272,8 @@ class GenerationPreferences(private val context: Context) {
             preferences.remove(getAspectRatioKey(modelId))
             preferences.remove(getUltrafixStepsKey(modelId))
             preferences.remove(getUltrafixDenoiseStepsKey(modelId))
+            preferences.remove(getCfgRescaleKey(modelId))
+            preferences.remove(getCfgCutoffKey(modelId))
         }
     }
 }

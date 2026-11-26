@@ -21,18 +21,13 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,18 +35,22 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -63,6 +62,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -72,11 +72,11 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -84,16 +84,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -104,21 +102,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
@@ -146,6 +147,7 @@ import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.ModelRepository
 import io.github.xororz.localdream.data.ModelStorage
 import io.github.xororz.localdream.data.PatchScanner
+import io.github.xororz.localdream.data.PromptTemplate
 import io.github.xororz.localdream.data.RemoteRepository
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
@@ -159,11 +161,10 @@ import io.github.xororz.localdream.ui.components.BlockingProgressOverlay
 import io.github.xororz.localdream.ui.components.GenerationParamsDialog
 import io.github.xororz.localdream.ui.components.ImportParametersDialog
 import io.github.xororz.localdream.ui.components.OverlayIconButton
+import io.github.xororz.localdream.ui.components.ParamSlider
 import io.github.xororz.localdream.ui.components.ReproduceParametersDialog
 import io.github.xororz.localdream.ui.components.ShareParamsFlow
-import io.github.xororz.localdream.ui.components.SmoothLinearWavyProgressIndicator
 import io.github.xororz.localdream.ui.components.ZoomableImageOverlay
-import io.github.xororz.localdream.ui.theme.Motion
 import io.github.xororz.localdream.utils.ImportedParams
 import io.github.xororz.localdream.utils.LogCapture
 import io.github.xororz.localdream.utils.ParamShare
@@ -172,6 +173,7 @@ import io.github.xororz.localdream.utils.performUpscale
 import io.github.xororz.localdream.utils.reportImage
 import io.github.xororz.localdream.utils.saveImage
 import io.github.xororz.localdream.utils.saveImageFromFile
+import io.github.xororz.localdream.utils.schedulerDisplayName
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -179,8 +181,11 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -201,7 +206,16 @@ fun ModelRunScreen(
     modifier: Modifier = Modifier,
     isRemote: Boolean = false,
 ) {
-    val serviceState by BackgroundGenerationService.generationState.collectAsState()
+    // Only whether a generation is running is read during composition. The
+    // per-step states (progress, preview) go straight to the handler further
+    // down, so a step tick doesn't recompose the whole screen.
+    val serviceBusy by remember {
+        BackgroundGenerationService.generationState
+            .map { it is GenerationState.Progress }
+            .distinctUntilChanged()
+    }.collectAsState(
+        initial = BackgroundGenerationService.generationState.value is GenerationState.Progress,
+    )
     val backendState by BackendService.backendState.collectAsState()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -240,6 +254,7 @@ fun ModelRunScreen(
     val msgNoImageAvailable = stringResource(R.string.no_image_available)
     val msgImageLoadFailed = stringResource(R.string.image_load_failed)
     val msgGenerationInterrupted = stringResource(R.string.generation_interrupted)
+    val msgQueueAdded = stringResource(R.string.queue_added)
     val msgRemoteSelectFailed = stringResource(R.string.remote_select_failed)
     // Reaches the screen with the repository already loaded on the normal
     // navigation path; resolves asynchronously after process recreation.
@@ -355,6 +370,27 @@ fun ModelRunScreen(
     var batchCounts by remember { mutableIntStateOf(GenerationDefaults.GLOBAL.batchCounts) }
     var scheduler by remember { mutableStateOf(GenerationDefaults.GLOBAL.scheduler) }
     var aspectRatio by remember { mutableStateOf(GenerationDefaults.GLOBAL.aspectRatio) }
+    var cfgRescale by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgRescale) }
+    var cfgCutoff by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.cfgCutoff) }
+    var showPromptTemplates by remember { mutableStateOf(false) }
+    // Chip on the prompt page whose quick-edit dialog is open.
+    var quickParam by remember { mutableStateOf<QuickParam?>(null) }
+    var showLivePreview by remember { mutableStateOf(false) }
+    // The progress slot's live preview starts maximized; minimizing it
+    // sticks until the user leaves this screen.
+    var previewMaximized by remember { mutableStateOf(true) }
+    // Generation queue and X/Y plots (see GenerationQueue.kt).
+    val generationQueue = remember { mutableStateListOf<GenerationJob>() }
+    val xyPlots = remember { mutableMapOf<Long, XyPlotRun>() }
+    var nextJobId by remember { mutableLongStateOf(1L) }
+    var runnerActive by remember { mutableStateOf(false) }
+    var currentBatchTotal by remember { mutableIntStateOf(0) }
+    var showXyPlotDialog by remember { mutableStateOf(false) }
+    // Last X/Y inputs, so re-opening the dialog keeps them.
+    var xyLastX by remember { mutableStateOf(XyAxisType.CFG) }
+    var xyLastXValues by remember { mutableStateOf("") }
+    var xyLastY by remember { mutableStateOf(XyAxisType.NONE) }
+    var xyLastYValues by remember { mutableStateOf("") }
     var showCustomAspectRatioDialog by remember { mutableStateOf(false) }
     var currentBatchIndex by remember { mutableIntStateOf(0) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -642,6 +678,23 @@ fun ModelRunScreen(
         }
     }
 
+    var guidanceSaveJob: Job? by remember { mutableStateOf(null) }
+    LaunchedEffect(modelId) {
+        cfgRescale = generationPreferences.observeCfgRescale(modelId).first()
+        cfgCutoff = generationPreferences.observeCfgCutoff(modelId).first()
+    }
+    fun saveGuidanceParams() {
+        guidanceSaveJob?.cancel()
+        guidanceSaveJob = scope.launch(Dispatchers.IO) {
+            delay(500)
+            generationPreferences.saveGuidanceParams(modelId, cfgRescale, cfgCutoff)
+        }
+    }
+    // Remembered: a fresh flow on every recomposition would re-subscribe to
+    // the DataStore each time.
+    val promptTemplates by remember { generationPreferences.observePromptTemplates() }
+        .collectAsState(initial = emptyList())
+
     fun saveUltrafixParams() {
         ultrafixSaveJob?.cancel()
         ultrafixSaveJob = scope.launch(Dispatchers.IO) {
@@ -714,7 +767,7 @@ fun ModelRunScreen(
 
     val onBatchCountsChange = remember {
         { value: Float ->
-            batchCounts = value.roundToInt().coerceIn(1, 10)
+            batchCounts = value.roundToInt().coerceIn(1, GenerationDefaults.BATCH_COUNT_MAX)
             saveAllFields()
         }
     }
@@ -1016,6 +1069,8 @@ fun ModelRunScreen(
                     putExtra("effective_height", bmp.height)
                     putExtra("denoise_strength", ultrafixDenoiseStrength)
                     putExtra("scheduler", scheduler)
+                    putExtra("cfg_rescale", cfgRescale)
+                    putExtra("cfg_cutoff", cfgCutoff)
                     putExtra("ultrafix", true)
                     putExtra("ultrafix_tile_size", tileSize)
                     putExtra("backend_host", backendHost)
@@ -1533,8 +1588,252 @@ fun ModelRunScreen(
         }
     }
 
-    LaunchedEffect(serviceState) {
-        when (val state = serviceState) {
+    // --- Generation runner: the live batch from the Generate button, then the
+    // queue (queued jobs and X/Y plot cells), one image at a time. ---
+
+    // A snapshot of the prompt page as a queueable job.
+    fun snapshotJob(count: Int, seedOverride: Long? = seed.toLongOrNull()): GenerationJob = GenerationJob(
+        id = nextJobId++,
+        prompt = promptField.text,
+        negativePrompt = negativePromptField.text,
+        steps = steps.roundToInt(),
+        cfg = cfg,
+        seed = seedOverride,
+        scheduler = scheduler,
+        denoiseStrength = denoiseStrength,
+        cfgRescale = cfgRescale,
+        cfgCutoff = cfgCutoff,
+        count = count,
+    )
+
+    // Runs one image through the service and waits for its terminal state.
+    // job == null reads the prompt page live, so edits made during a batch
+    // apply to its next image (the original batch behavior).
+    suspend fun runOneGeneration(
+        job: GenerationJob?,
+        batchIndex: Int,
+        editReferencePayloads: List<String>,
+    ): GenerationState {
+        val run = job ?: snapshotJob(1)
+        Log.d("ModelRunScreen", "preparing batch $batchIndex")
+        generationParamsTmp = GenerationParameters(
+            steps = run.steps,
+            cfg = run.cfg,
+            seed = 0,
+            prompt = run.prompt,
+            negativePrompt = run.negativePrompt,
+            generationTime = "",
+            width = currentWidth,
+            height = currentHeight,
+            runOnCpu = model?.runOnCpu ?: false,
+            denoiseStrength = run.denoiseStrength,
+            useOpenCL = useOpenCL,
+            scheduler = run.scheduler,
+        )
+
+        val batchIntent = Intent(
+            context,
+            BackgroundGenerationService::class.java,
+        ).apply {
+            putExtra("prompt", run.prompt)
+            putExtra("negative_prompt", run.negativePrompt)
+            putExtra("steps", run.steps)
+            putExtra("cfg", run.cfg)
+            run.seed?.let { putExtra("seed", it) }
+            putExtra("width", currentWidth)
+            putExtra("height", currentHeight)
+            // Backend now crops progress previews to the
+            // visible target rectangle, so the service must
+            // decode each preview with the effective dims
+            // (target_w/h), not the 1024 canvas size.
+            putExtra("effective_width", effectiveWidth)
+            putExtra("effective_height", effectiveHeight)
+            putExtra("denoise_strength", run.denoiseStrength)
+            putExtra("use_opencl", useOpenCL)
+            putExtra("scheduler", run.scheduler)
+            putExtra("cfg_rescale", run.cfgRescale)
+            putExtra("cfg_cutoff", run.cfgCutoff)
+            putExtra("aspect_ratio", aspectRatio)
+            putExtra("batch_index", batchIndex)
+            putExtra("backend_host", backendHost)
+            if (editReferencePayloads.isNotEmpty()) {
+                putExtra("has_reference_images", true)
+            }
+            if (selectedImageUri != null && base64EncodeDone) {
+                putExtra("has_image", true)
+                if (isInpaintMode && maskBitmap != null) {
+                    putExtra("has_mask", true)
+                }
+            }
+        }
+
+        Log.d("ModelRunScreen", "start service - batch $batchIndex")
+        context.startForegroundService(batchIntent)
+
+        val terminal = BackgroundGenerationService.generationState
+            .first { state ->
+                state is GenerationState.Complete ||
+                    state is GenerationState.Error
+            }
+
+        Log.d("ModelRunScreen", "batch $batchIndex completed, waiting for service to stop")
+
+        // Wait for service to actually stop
+        val waitStartTime = System.currentTimeMillis()
+        val stopped = withTimeoutOrNull(5000L) {
+            BackgroundGenerationService.isServiceRunning
+                .first { !it }
+        }
+        if (stopped == null) {
+            Log.w("ModelRunScreen", "Timeout waiting for service to stop")
+        }
+        Log.d(
+            "ModelRunScreen",
+            "service stopped, wait time: ${System.currentTimeMillis() - waitStartTime}ms",
+        )
+
+        BackgroundGenerationService.resetState()
+        return terminal
+    }
+
+    // Collects an X/Y plot cell; once the plot is complete the labelled grid
+    // is saved to history and shown as the current result.
+    fun onXyCellDone(cell: XyCell, state: GenerationState) {
+        val plot = xyPlots[cell.plotId] ?: return
+        if (state is GenerationState.Complete) plot.put(cell, state.bitmap) else plot.failed++
+        if (!plot.isDone) return
+        xyPlots.remove(cell.plotId)
+        coroutineScope.launch(Dispatchers.Default) {
+            val grid = plot.buildGrid() ?: return@launch
+            val params = plot.baseParams.copy(width = grid.width, height = grid.height)
+            val saved = historyManager.saveGeneratedImage(
+                modelId = modelId,
+                bitmap = grid,
+                params = params,
+                mode = params.mode,
+            )
+            withContext(Dispatchers.Main) {
+                currentBitmap = grid
+                generationParams = params
+                generationParamsModelId = modelId
+                currentDisplayedHistoryId = saved?.id
+                stitchableHistoryIds = emptySet()
+                imageVersion += 1
+            }
+        }
+    }
+
+    fun startGenerationRunner(includeLiveBatch: Boolean) {
+        if (runnerActive) return
+        pendingUltrafix = false
+        runnerActive = true
+        batchGenerationJob = coroutineScope.launch {
+            try {
+                // Freeze the selected reference set for the
+                // whole run and persist it immediately
+                // before the first service request. This
+                // also closes races with rapid thumbnail
+                // removals rewriting the scratch file.
+                val editReferencePayloads =
+                    if (supportsReferenceEditing) {
+                        editReferenceImages.map { it.base64 }
+                    } else {
+                        emptyList()
+                    }
+                if (editReferencePayloads.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        val json = JSONArray()
+                        editReferencePayloads.forEach { json.put(it) }
+                        File(context.filesDir, "dit_references.json")
+                            .writeText(json.toString())
+                    }
+                }
+                if (includeLiveBatch) {
+                    // If seed is set, only generate once regardless of batch count
+                    val actualBatchCount = if (seed.isNotBlank()) 1 else batchCounts
+                    Log.d("ModelRunScreen", "start generation batch: $actualBatchCount times")
+                    currentBatchTotal = actualBatchCount
+                    for (i in 0 until actualBatchCount) {
+                        currentBatchIndex = i + 1
+                        runOneGeneration(null, i, editReferencePayloads)
+                    }
+                }
+                while (generationQueue.isNotEmpty()) {
+                    val job = generationQueue.removeAt(0)
+                    currentBatchTotal = job.count
+                    for (i in 0 until job.count) {
+                        currentBatchIndex = i + 1
+                        val state = runOneGeneration(job, i, editReferencePayloads)
+                        job.xyCell?.let { onXyCellDone(it, state) }
+                    }
+                }
+            } finally {
+                currentBatchIndex = 0
+                currentBatchTotal = 0
+                isRunning = false
+                runnerActive = false
+                Log.d("ModelRunScreen", "all batches completed, isRunning set to false")
+            }
+        }
+    }
+
+    fun enqueueXyPlot(x: XyAxis, y: XyAxis) {
+        val plotId = nextJobId++
+        // One fixed seed for the whole sheet, so the cells differ only by the
+        // swept parameters (unless the sweep is the seed itself).
+        val plotSeed = seed.toLongOrNull() ?: kotlin.random.Random.nextLong(0, UInt.MAX_VALUE.toLong())
+        val base = snapshotJob(1, plotSeed)
+        val mode = when {
+            supportsReferenceEditing && (selectedImageUri != null || editReferenceImages.isNotEmpty()) ->
+                GenerationMode.EDIT
+
+            isInpaintMode -> GenerationMode.INPAINT
+
+            selectedImageUri != null -> GenerationMode.IMG2IMG
+
+            else -> GenerationMode.TXT2IMG
+        }
+        val plot = XyPlotRun(
+            id = plotId,
+            x = x,
+            y = y,
+            baseParams = GenerationParameters(
+                steps = base.steps,
+                cfg = base.cfg,
+                seed = plotSeed,
+                prompt = base.prompt,
+                negativePrompt = base.negativePrompt,
+                generationTime = null,
+                width = currentWidth,
+                height = currentHeight,
+                runOnCpu = model?.runOnCpu ?: false,
+                denoiseStrength = base.denoiseStrength,
+                useOpenCL = useOpenCL,
+                scheduler = base.scheduler,
+                mode = mode,
+            ),
+        )
+        xyPlots[plotId] = plot
+        val rows = maxOf(1, y.values.size)
+        for (r in 0 until rows) {
+            for (c in x.values.indices) {
+                var job = applyXyValue(base, x, c)
+                if (y.type != XyAxisType.NONE) job = applyXyValue(job, y, r)
+                val label = if (y.type == XyAxisType.NONE) {
+                    x.values[c]
+                } else {
+                    "${x.values[c]} / ${y.values[r]}"
+                }
+                generationQueue += job.copy(
+                    id = nextJobId++,
+                    xyCell = XyCell(plotId, c, r, label),
+                )
+            }
+        }
+    }
+
+    val onServiceState: suspend (GenerationState) -> Unit = { state ->
+        when (state) {
             is GenerationState.Progress -> {
                 if (generationStartTime == null) {
                     generationStartTime = System.currentTimeMillis()
@@ -1680,6 +1979,12 @@ fun ModelRunScreen(
             }
         }
     }
+    // Latest handler, so it always sees this composition's values. A new
+    // state cancels a handler still running (as the keyed effect used to).
+    val latestOnServiceState by rememberUpdatedState(onServiceState)
+    LaunchedEffect(Unit) {
+        BackgroundGenerationService.generationState.collectLatest { latestOnServiceState(it) }
+    }
 
     // Only intercept back while a generation is running: back then offers to
     // interrupt the generation and stays on the screen (a second back exits).
@@ -1798,6 +2103,7 @@ fun ModelRunScreen(
                 showResolutionChangeDialog = false
                 pendingResolution = null
                 showAdvancedSettings = false
+                quickParam = null
             },
             onDismiss = {
                 showResolutionChangeDialog = false
@@ -1822,6 +2128,9 @@ fun ModelRunScreen(
                 promptField.replaceText(defaults.prompt)
                 negativePromptField.replaceText(defaults.negativePrompt)
                 denoiseStrength = defaults.denoiseStrength
+                cfgRescale = defaults.cfgRescale
+                cfgCutoff = defaults.cfgCutoff
+                saveGuidanceParams()
                 scope.launch(Dispatchers.IO) {
                     generationPreferences.saveAllFields(
                         modelId = modelId,
@@ -1913,630 +2222,193 @@ fun ModelRunScreen(
         }
     }
 
+    // Typing mode: a prompt field has focus and the on-screen keyboard is up.
+    // The top bar, chips and generate bar step aside so the field being
+    // edited gets the room, and the suggestion strip docks on the keyboard.
+    // Derived so the IME animation doesn't recompose the screen every frame.
+    val imeInsets = WindowInsets.ime
+    val density = LocalDensity.current
+    val typingMode by remember(imeInsets, density) {
+        derivedStateOf {
+            imeInsets.getBottom(density) > 0 && pagerState.currentPage == 0 &&
+                (promptField.isFocused || negativePromptField.isFocused)
+        }
+    }
+
     // === Page Composable Functions ===
+
+    // img2img / inpaint / edit-reference thumbnails under the prompts.
     @Composable
-    fun PromptPage() {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                // Reserve the IME area so the scroll viewport ends above the
-                // keyboard; the focused prompt field is then scrolled above the IME
-                // (which also keeps its window position accurate for the popup).
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+    fun ImageInputsRow() {
+        AnimatedVisibility(
+            visible = (selectedImageUri != null && base64EncodeDone) ||
+                editReferenceImages.isNotEmpty() || editReferencesLoading,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
         ) {
-            AnimatedVisibility(
-                visible = intermediateBitmap == null,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-            ) {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(R.string.prompt_settings),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (useImg2img) {
-                                    // Native edit models take a base image and any number of
-                                    // references through one entry; a menu picks
-                                    // which one to add.
-                                    Box {
-                                        TextButton(
-                                            onClick = {
-                                                if (supportsReferenceEditing) {
-                                                    showReferenceEditMenu = true
-                                                } else {
-                                                    onSelectImageClick()
-                                                }
-                                            },
-                                            contentPadding = PaddingValues(
-                                                horizontal = 8.dp,
-                                                vertical = 8.dp,
-                                            ),
-                                        ) {
-                                            Text(
-                                                if (supportsReferenceEditing) {
-                                                    stringResource(R.string.flux_edit)
-                                                } else {
-                                                    "img2img"
-                                                },
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                modifier = Modifier.padding(end = 4.dp),
-                                            )
-                                            Icon(
-                                                Icons.Default.Image,
-                                                contentDescription = "select image",
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = showReferenceEditMenu,
-                                            onDismissRequest = { showReferenceEditMenu = false },
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.flux_base_image)) },
-                                                leadingIcon = {
-                                                    Icon(Icons.Default.Image, contentDescription = null)
-                                                },
-                                                onClick = {
-                                                    showReferenceEditMenu = false
-                                                    onSelectImageClick()
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Text(stringResource(R.string.flux_reference_images))
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        Icons.Default.AddPhotoAlternate,
-                                                        contentDescription = null,
-                                                    )
-                                                },
-                                                enabled = !editReferencesLoading,
-                                                onClick = {
-                                                    showReferenceEditMenu = false
-                                                    onAddEditReferencesClick()
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-                                TextButton(
-                                    onClick = { showAdvancedSettings = true },
-                                    contentPadding = PaddingValues(
-                                        horizontal = 8.dp,
-                                        vertical = 8.dp,
-                                    ),
-                                ) {
-                                    Text(
-                                        stringResource(R.string.advanced_settings),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.padding(end = 4.dp),
-                                    )
-                                    Icon(
-                                        Icons.Default.Settings,
-                                        contentDescription = stringResource(R.string.settings),
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                            if (showAdvancedSettings) {
-                                AdvancedSettingsDialog(
-                                    isSdxl = model?.usesFixedCanvas == true,
-                                    isDit = model?.isDit == true,
-                                    onDitWidthChange = onDitWidthChange,
-                                    onDitHeightChange = onDitHeightChange,
-                                    runOnCpu = model?.runOnCpu ?: false,
-                                    useImg2img = useImg2img,
-                                    isRunning = isRunning,
-                                    aspectRatio = aspectRatio,
-                                    availableResolutions = availableResolutions,
-                                    currentWidth = currentWidth,
-                                    currentHeight = currentHeight,
-                                    scheduler = scheduler,
-                                    steps = steps,
-                                    cfg = cfg,
-                                    useOpenCL = useOpenCL,
-                                    batchCounts = batchCounts,
-                                    denoiseStrength = denoiseStrength,
-                                    seed = seed,
-                                    returnedSeed = returnedSeed,
-                                    onAspectRatioSelected = { ratio ->
-                                        if (!isRunning && aspectRatio != ratio) {
-                                            aspectRatio = ratio
-                                            clearImg2imgState()
-                                            saveAllFields()
-                                        }
-                                    },
-                                    onCustomAspectRatioClick = {
-                                        if (!isRunning) {
-                                            showCustomAspectRatioDialog = true
-                                        }
-                                    },
-                                    onResolutionSelected = { resolution ->
-                                        if (!isRunning &&
-                                            (
-                                                resolution.width != currentWidth ||
-                                                    resolution.height != currentHeight
-                                                )
-                                        ) {
-                                            pendingResolution = resolution
-                                            showResolutionChangeDialog = true
-                                        }
-                                    },
-                                    onSchedulerChange = { value ->
-                                        scheduler = value
-                                        saveAllFields()
-                                    },
-                                    onStepsChange = onStepsChange,
-                                    onCfgChange = onCfgChange,
-                                    onSizeChange = onSizeChange,
-                                    onCpuSelected = {
-                                        useOpenCL = false
-                                        saveAllFields()
-                                    },
-                                    onGpuSelected = { showOpenCLWarningDialog = true },
-                                    onBatchCountsChange = onBatchCountsChange,
-                                    onDenoiseStrengthChange = onDenoiseStrengthChange,
-                                    onSeedChange = onSeedChange,
-                                    onUseLastSeed = {
-                                        seed = returnedSeed.toString()
-                                        saveAllFields()
-                                    },
-                                    onImportFromClipboard = {
-                                        val clipboard =
-                                            context.getSystemService(
-                                                Context.CLIPBOARD_SERVICE,
-                                            ) as? ClipboardManager
-                                        val raw = clipboard?.primaryClip
-                                            ?.takeIf { it.itemCount > 0 }
-                                            ?.getItemAt(0)
-                                            ?.coerceToText(context)
-                                            ?.toString()
-                                        val imported = ParamShare.tryDecode(raw)
-                                        if (imported != null) {
-                                            pendingImport = imported
-                                            clipboardImportChecked = true
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                msgImportNoParams,
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    },
-                                    onShare = {
-                                        val currentMode = when {
-                                            supportsReferenceEditing && (selectedImageUri != null || editReferenceImages.isNotEmpty()) ->
-                                                GenerationMode.EDIT
-
-                                            isInpaintMode -> GenerationMode.INPAINT
-
-                                            selectedImageUri != null -> GenerationMode.IMG2IMG
-
-                                            else -> GenerationMode.TXT2IMG
-                                        }
-                                        shareSourceParams = GenerationParameters(
-                                            steps = steps.toInt(),
-                                            cfg = cfg,
-                                            seed = seed.toLongOrNull(),
-                                            prompt = promptField.text,
-                                            negativePrompt = negativePromptField.text,
-                                            generationTime = null,
-                                            width = currentWidth,
-                                            height = currentHeight,
-                                            runOnCpu = model?.runOnCpu ?: false,
-                                            denoiseStrength = denoiseStrength,
-                                            useOpenCL = useOpenCL,
-                                            scheduler = scheduler,
-                                            mode = currentMode,
-                                        )
-                                        shareSourceModelId = modelId
-                                    },
-                                    onReset = { showResetConfirmDialog = true },
-                                    onDismiss = { showAdvancedSettings = false },
-                                )
-                            }
-                        }
-
-                        ControlledPromptTagTextField(
-                            controller = promptField,
-                            autocompleteAvailable = tagAutocompleteAvailable,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = {
-                                PromptCountLabel(
-                                    label = stringResource(R.string.image_prompt),
-                                    count = promptField.tokenCount,
-                                    max = promptField.tokenMax,
-                                    showCount = promptField.text.isNotEmpty(),
-                                )
-                            },
-                        )
-
-                        ControlledPromptTagTextField(
-                            controller = negativePromptField,
-                            autocompleteAvailable = tagAutocompleteAvailable,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = {
-                                PromptCountLabel(
-                                    label = stringResource(R.string.negative_prompt),
-                                    count = negativePromptField.tokenCount,
-                                    max = negativePromptField.tokenMax,
-                                    showCount = negativePromptField.text.isNotEmpty(),
-                                )
-                            },
-                        )
-
-                        Button(
-                            onClick = {
-                                focusManager.clearFocus()
-                                pendingUltrafix = false
-                                Log.d(
-                                    "ModelRunScreen",
-                                    "start generation",
-                                )
-                                generationParamsTmp = GenerationParameters(
-                                    steps = steps.roundToInt(),
-                                    cfg = cfg,
-                                    seed = 0,
-                                    prompt = promptField.text,
-                                    negativePrompt = negativePromptField.text,
-                                    generationTime = "",
-                                    width = currentWidth,
-                                    height = currentHeight,
-                                    runOnCpu = model?.runOnCpu ?: false,
-                                    denoiseStrength = denoiseStrength,
-                                    useOpenCL = useOpenCL,
-                                    scheduler = scheduler,
-                                )
-
-                                Log.d(
-                                    "ModelRunScreen",
-                                    "start generation batch: $batchCounts times",
-                                )
-
-                                // If seed is set, only generate once regardless of batch count
-                                val actualBatchCount =
-                                    if (seed.isNotBlank()) 1 else batchCounts
-
-                                batchGenerationJob = coroutineScope.launch {
-                                    // Freeze the selected reference set for the
-                                    // whole batch and persist it immediately
-                                    // before the first service request. This
-                                    // also closes races with rapid thumbnail
-                                    // removals rewriting the scratch file.
-                                    val editReferencePayloads =
-                                        if (supportsReferenceEditing) {
-                                            editReferenceImages.map { it.base64 }
-                                        } else {
-                                            emptyList()
-                                        }
-                                    if (editReferencePayloads.isNotEmpty()) {
-                                        withContext(Dispatchers.IO) {
-                                            val json = JSONArray()
-                                            editReferencePayloads.forEach { json.put(it) }
-                                            File(context.filesDir, "dit_references.json")
-                                                .writeText(json.toString())
-                                        }
-                                    }
-                                    for (i in 0 until actualBatchCount) {
-                                        currentBatchIndex = i + 1
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "preparing batch $i",
-                                        )
-
-                                        // Update generationParamsTmp to reflect current parameters
-                                        // This allows parameters to be changed during batch execution
-                                        generationParamsTmp = GenerationParameters(
-                                            steps = steps.roundToInt(),
-                                            cfg = cfg,
-                                            seed = 0,
-                                            prompt = promptField.text,
-                                            negativePrompt = negativePromptField.text,
-                                            generationTime = "",
-                                            width = currentWidth,
-                                            height = currentHeight,
-                                            runOnCpu = model?.runOnCpu ?: false,
-                                            denoiseStrength = denoiseStrength,
-                                            useOpenCL = useOpenCL,
-                                            scheduler = scheduler,
-                                        )
-
-                                        val batchIntent = Intent(
-                                            context,
-                                            BackgroundGenerationService::class.java,
-                                        ).apply {
-                                            putExtra("prompt", promptField.text)
-                                            putExtra(
-                                                "negative_prompt",
-                                                negativePromptField.text,
-                                            )
-                                            putExtra("steps", steps.roundToInt())
-                                            putExtra("cfg", cfg)
-                                            seed.toLongOrNull()
-                                                ?.let { putExtra("seed", it) }
-                                            putExtra("width", currentWidth)
-                                            putExtra("height", currentHeight)
-                                            // Backend now crops progress previews to the
-                                            // visible target rectangle, so the service must
-                                            // decode each preview with the effective dims
-                                            // (target_w/h), not the 1024 canvas size.
-                                            putExtra("effective_width", effectiveWidth)
-                                            putExtra("effective_height", effectiveHeight)
-                                            putExtra(
-                                                "denoise_strength",
-                                                denoiseStrength,
-                                            )
-                                            putExtra("use_opencl", useOpenCL)
-                                            putExtra("scheduler", scheduler)
-                                            putExtra("aspect_ratio", aspectRatio)
-                                            putExtra("batch_index", i)
-                                            putExtra("backend_host", backendHost)
-                                            if (editReferencePayloads.isNotEmpty()) {
-                                                putExtra("has_reference_images", true)
-                                            }
-                                            if (selectedImageUri != null && base64EncodeDone) {
-                                                putExtra("has_image", true)
-                                                if (isInpaintMode && maskBitmap != null) {
-                                                    putExtra("has_mask", true)
-                                                }
-                                            }
-                                        }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "start service - batch $i",
-                                        )
-
-                                        context.startForegroundService(batchIntent)
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "start service sent - batch $i",
-                                        )
-
-                                        BackgroundGenerationService.generationState
-                                            .first { state ->
-                                                state is GenerationState.Complete ||
-                                                    state is GenerationState.Error
-                                            }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "batch $i completed, waiting for service to stop",
-                                        )
-
-                                        // Wait for service to actually stop
-                                        val waitStartTime =
-                                            System.currentTimeMillis()
-                                        val stopped = withTimeoutOrNull(5000L) {
-                                            BackgroundGenerationService.isServiceRunning
-                                                .first { !it }
-                                        }
-                                        if (stopped == null) {
-                                            Log.w(
-                                                "ModelRunScreen",
-                                                "Timeout waiting for service to stop",
-                                            )
-                                        }
-
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "service stopped, wait time: ${System.currentTimeMillis() - waitStartTime}ms",
-                                        )
-
-                                        BackgroundGenerationService.resetState()
-                                        Log.d(
-                                            "ModelRunScreen",
-                                            "service state reset, ready for next batch",
-                                        )
-                                    }
-                                    currentBatchIndex = 0
-                                    isRunning = false
-                                    Log.d(
-                                        "ModelRunScreen",
-                                        "all batches completed, isRunning set to false",
-                                    )
-                                }
-                            },
-                            enabled = serviceState !is GenerationState.Progress &&
-                                !isRunning && !isUpscaling && !isUltrafixPreparing &&
-                                (selectedImageUri == null || base64EncodeDone),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                        ) {
-                            AnimatedContent(
-                                targetState = serviceState is GenerationState.Progress || isUpscaling,
-                                transitionSpec = {
-                                    (
-                                        fadeIn(animationSpec = tween(Motion.DurationShort)) + scaleIn(
-                                            initialScale = 0.8f,
-                                            animationSpec = tween(Motion.DurationShort),
-                                        )
-                                        )
-                                        .togetherWith(
-                                            fadeOut(animationSpec = tween(Motion.DurationShort)) + scaleOut(
-                                                targetScale = 0.8f,
-                                                animationSpec = tween(Motion.DurationShort),
-                                            ),
-                                        )
-                                },
-                                label = "GenerateButtonContent",
-                            ) { isLoading ->
-                                if (isLoading) {
-                                    LoadingIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                    )
-                                } else {
-                                    Text(stringResource(R.string.generate_image))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            AnimatedVisibility(
-                visible = errorMessage != null,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                errorMessage?.let { msg ->
-                    Card(
-                        onClick = { errorMessage = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                msg,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-            }
-            AnimatedVisibility(
-                visible = isRunning,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = if (currentBatchIndex > 0) {
-                                "${
-                                    stringResource(
-                                        R.string.generating,
-                                    )
-                                } ($currentBatchIndex/$batchCounts)…"
-                            } else {
-                                stringResource(
-                                    R.string.generating,
-                                )
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        SmoothLinearWavyProgressIndicator(
-                            progress = progress,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        intermediateBitmap?.let { bitmap ->
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Card(
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f),
-                            ) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "Generation Preview",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = (selectedImageUri != null && base64EncodeDone) ||
-                    editReferenceImages.isNotEmpty() || editReferencesLoading,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                Box(
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start,
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Start,
+                    if (selectedImageUri != null) {
+                        Card(
+                            modifier = Modifier
+                                .size(80.dp),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Box {
+                                croppedBitmap?.let { bitmap ->
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(
+                                            LocalContext.current,
+                                        )
+                                            .data(bitmap)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = "Cropped Image",
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } ?: selectedImageUri?.let { uri ->
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(
+                                            LocalContext.current,
+                                        )
+                                            .data(uri)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = "Selected Image",
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (supportsReferenceEditing) {
+                                            clearBaseImageState()
+                                        } else {
+                                            clearImg2imgState()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surface.copy(
+                                                alpha = 0.7f,
+                                            ),
+                                            shape = CircleShape,
+                                        )
+                                        .align(Alignment.TopEnd),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Clear,
+                                        contentDescription = "Remove Image",
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        showDrawScreen = true
+                                    },
+                                    enabled = !isRunning && croppedBitmap != null,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surface.copy(
+                                                alpha = 0.7f,
+                                            ),
+                                            shape = CircleShape,
+                                        )
+                                        .align(Alignment.TopStart),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Draw,
+                                        contentDescription = "Draw Image",
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                                // The base image is always reference 1.
+                                if (supportsReferenceEditing) {
+                                    Text(
+                                        "1",
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .background(
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                                CircleShape,
+                                            )
+                                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = selectedImageUri != null && croppedBitmap != null && !isInpaintMode,
+                        enter = fadeIn() + expandHorizontally(),
+                        exit = fadeOut() + shrinkHorizontally(),
                     ) {
-                        if (selectedImageUri != null) {
+                        Row {
+                            Spacer(modifier = Modifier.width(12.dp))
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    if (croppedBitmap != null) {
+                                        showInpaintScreen = true
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            msgPleaseCropFirst,
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Brush,
+                                    contentDescription = "Set Mask",
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = selectedImageUri != null && isInpaintMode && maskBitmap != null,
+                        enter = fadeIn() + expandHorizontally(),
+                        exit = fadeOut() + shrinkHorizontally(),
+                    ) {
+                        Row {
+                            Spacer(modifier = Modifier.width(8.dp))
                             Card(
-                                modifier = Modifier
-                                    .size(100.dp),
+                                onClick = {
+                                    if (croppedBitmap != null && maskBitmap != null) {
+                                        showInpaintScreen = true
+                                    }
+                                },
+                                modifier = Modifier.size(80.dp),
                                 shape = MaterialTheme.shapes.small,
                             ) {
                                 Box {
-                                    croppedBitmap?.let { bitmap ->
+                                    maskBitmap?.let { mb ->
                                         AsyncImage(
                                             model = ImageRequest.Builder(
                                                 LocalContext.current,
                                             )
-                                                .data(bitmap)
+                                                .data(mb)
                                                 .crossfade(true)
                                                 .build(),
-                                            contentDescription = "Cropped Image",
-                                            modifier = Modifier.fillMaxSize(),
-                                        )
-                                    } ?: selectedImageUri?.let { uri ->
-                                        AsyncImage(
-                                            model = ImageRequest.Builder(
-                                                LocalContext.current,
-                                            )
-                                                .data(uri)
-                                                .crossfade(true)
-                                                .build(),
-                                            contentDescription = "Selected Image",
+                                            contentDescription = "Mask Image",
                                             modifier = Modifier.fillMaxSize(),
                                         )
                                     }
                                     IconButton(
                                         onClick = {
-                                            if (supportsReferenceEditing) {
-                                                clearBaseImageState()
-                                            } else {
-                                                clearImg2imgState()
-                                            }
+                                            maskBitmap = null
+                                            isInpaintMode = false
+                                            savedPathHistory = null
                                         },
                                         modifier = Modifier
                                             .size(24.dp)
@@ -2550,15 +2422,40 @@ fun ModelRunScreen(
                                     ) {
                                         Icon(
                                             Icons.Default.Clear,
-                                            contentDescription = "Remove Image",
+                                            contentDescription = "Clear Mask",
                                             modifier = Modifier.size(16.dp),
                                         )
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    if (supportsReferenceEditing) {
+                        // The base image is always reference 1, so the
+                        // user's references are numbered after it.
+                        val firstNumber = if (selectedImageUri != null) 2 else 1
+                        editReferenceImages.forEachIndexed { index, reference ->
+                            if (index > 0 || selectedImageUri != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Card(
+                                modifier = Modifier.size(80.dp),
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Box {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(reference.bitmap)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = "Reference image ${firstNumber + index}",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
                                     IconButton(
-                                        onClick = {
-                                            showDrawScreen = true
-                                        },
-                                        enabled = !isRunning && croppedBitmap != null,
+                                        onClick = { removeEditReference(index) },
+                                        enabled = !isRunning,
                                         modifier = Modifier
                                             .size(24.dp)
                                             .background(
@@ -2567,199 +2464,670 @@ fun ModelRunScreen(
                                                 ),
                                                 shape = CircleShape,
                                             )
-                                            .align(Alignment.TopStart),
+                                            .align(Alignment.TopEnd),
                                     ) {
                                         Icon(
-                                            Icons.Default.Draw,
-                                            contentDescription = "Draw Image",
+                                            Icons.Default.Clear,
+                                            contentDescription = "Remove reference image",
                                             modifier = Modifier.size(16.dp),
                                         )
                                     }
-                                    // The base image is always reference 1.
-                                    if (supportsReferenceEditing) {
-                                        Text(
-                                            "1",
-                                            modifier = Modifier
-                                                .align(Alignment.BottomStart)
-                                                .background(
-                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                                                    CircleShape,
-                                                )
-                                                .padding(horizontal = 7.dp, vertical = 2.dp),
-                                            style = MaterialTheme.typography.labelMedium,
-                                        )
-                                    }
+                                    Text(
+                                        "${firstNumber + index}",
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .background(
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                                CircleShape,
+                                            )
+                                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
                                 }
                             }
                         }
-
-                        AnimatedVisibility(
-                            visible = selectedImageUri != null && croppedBitmap != null && !isInpaintMode,
-                            enter = fadeIn() + expandHorizontally(),
-                            exit = fadeOut() + shrinkHorizontally(),
+                        // Same affordance as the mask button: a small FAB
+                        // after the thumbnails rather than another card.
+                        Spacer(modifier = Modifier.width(12.dp))
+                        SmallFloatingActionButton(
+                            onClick = {
+                                if (!isRunning && !editReferencesLoading) {
+                                    onAddEditReferencesClick()
+                                }
+                            },
                         ) {
-                            Row {
-                                Spacer(modifier = Modifier.width(12.dp))
-                                SmallFloatingActionButton(
-                                    onClick = {
-                                        if (croppedBitmap != null) {
-                                            showInpaintScreen = true
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                msgPleaseCropFirst,
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    },
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Brush,
-                                        contentDescription = "Set Mask",
-                                    )
-                                }
-                            }
-                        }
-
-                        AnimatedVisibility(
-                            visible = selectedImageUri != null && isInpaintMode && maskBitmap != null,
-                            enter = fadeIn() + expandHorizontally(),
-                            exit = fadeOut() + shrinkHorizontally(),
-                        ) {
-                            Row {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Card(
-                                    onClick = {
-                                        if (croppedBitmap != null && maskBitmap != null) {
-                                            showInpaintScreen = true
-                                        }
-                                    },
-                                    modifier = Modifier.size(100.dp),
-                                    shape = MaterialTheme.shapes.small,
-                                ) {
-                                    Box {
-                                        maskBitmap?.let { mb ->
-                                            AsyncImage(
-                                                model = ImageRequest.Builder(
-                                                    LocalContext.current,
-                                                )
-                                                    .data(mb)
-                                                    .crossfade(true)
-                                                    .build(),
-                                                contentDescription = "Mask Image",
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                maskBitmap = null
-                                                isInpaintMode = false
-                                                savedPathHistory = null
-                                            },
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .background(
-                                                    color = MaterialTheme.colorScheme.surface.copy(
-                                                        alpha = 0.7f,
-                                                    ),
-                                                    shape = CircleShape,
-                                                )
-                                                .align(Alignment.TopEnd),
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Clear,
-                                                contentDescription = "Clear Mask",
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (supportsReferenceEditing) {
-                            // The base image is always reference 1, so the
-                            // user's references are numbered after it.
-                            val firstNumber = if (selectedImageUri != null) 2 else 1
-                            editReferenceImages.forEachIndexed { index, reference ->
-                                if (index > 0 || selectedImageUri != null) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                Card(
-                                    modifier = Modifier.size(100.dp),
-                                    shape = MaterialTheme.shapes.small,
-                                ) {
-                                    Box {
-                                        AsyncImage(
-                                            model = ImageRequest.Builder(LocalContext.current)
-                                                .data(reference.bitmap)
-                                                .crossfade(true)
-                                                .build(),
-                                            contentDescription = "Reference image ${firstNumber + index}",
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                        IconButton(
-                                            onClick = { removeEditReference(index) },
-                                            enabled = !isRunning,
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .background(
-                                                    color = MaterialTheme.colorScheme.surface.copy(
-                                                        alpha = 0.7f,
-                                                    ),
-                                                    shape = CircleShape,
-                                                )
-                                                .align(Alignment.TopEnd),
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Clear,
-                                                contentDescription = "Remove reference image",
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                        Text(
-                                            "${firstNumber + index}",
-                                            modifier = Modifier
-                                                .align(Alignment.BottomStart)
-                                                .background(
-                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                                                    CircleShape,
-                                                )
-                                                .padding(horizontal = 7.dp, vertical = 2.dp),
-                                            style = MaterialTheme.typography.labelMedium,
-                                        )
-                                    }
-                                }
-                            }
-                            // Same affordance as the mask button: a small FAB
-                            // after the thumbnails rather than another card.
-                            Spacer(modifier = Modifier.width(12.dp))
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    if (!isRunning && !editReferencesLoading) {
-                                        onAddEditReferencesClick()
-                                    }
-                                },
-                            ) {
-                                if (editReferencesLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
-                                        contentDescription = stringResource(
-                                            R.string.flux_add_reference,
-                                        ),
-                                    )
-                                }
+                            if (editReferencesLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AddPhotoAlternate,
+                                    contentDescription = stringResource(
+                                        R.string.flux_add_reference,
+                                    ),
+                                )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    // The tap-to-change settings under the prompts, plus the img2img,
+    // templates and Advanced entry points.
+    @Composable
+    fun ParamChips() {
+        val usesFixedCanvas = model?.usesFixedCanvas == true
+        val isDit = model?.isDit == true
+        val runOnCpu = model?.runOnCpu == true
+        val sizeEditable = when {
+            isDit -> true
+            usesFixedCanvas -> useImg2img
+            runOnCpu -> true
+            else -> availableResolutions.size > 1
+        }
+        ParamChipRow {
+            ParamChip(
+                label = stringResource(R.string.chip_steps, steps.roundToInt()),
+                onClick = { quickParam = QuickParam.STEPS },
+            )
+            ParamChip(
+                label = "CFG ${formatAxisNumber(cfg)}",
+                // Rescale or skip-negative in effect: worth a second look.
+                highlighted = cfg > 1f && (cfgRescale > 0f || cfgCutoff < 1f),
+                onClick = { quickParam = QuickParam.GUIDANCE },
+            )
+            ParamChip(
+                label = schedulerDisplayName(scheduler),
+                onClick = { quickParam = QuickParam.SAMPLER },
+            )
+            ParamChip(
+                label = "$effectiveWidth×$effectiveHeight",
+                enabled = sizeEditable && !isRunning,
+                onClick = { quickParam = QuickParam.SIZE },
+            )
+            ParamChip(
+                label = if (seed.isBlank()) {
+                    stringResource(R.string.chip_seed_random)
+                } else {
+                    stringResource(R.string.chip_seed, seed)
+                },
+                highlighted = seed.isNotBlank(),
+                onClick = { quickParam = QuickParam.SEED },
+            )
+            ParamChip(
+                label = stringResource(R.string.chip_batch, if (seed.isNotBlank()) 1 else batchCounts),
+                onClick = { quickParam = QuickParam.BATCH },
+            )
+            if (useImg2img && selectedImageUri != null) {
+                ParamChip(
+                    label = stringResource(R.string.chip_denoise, "%.2f".format(denoiseStrength)),
+                    onClick = { quickParam = QuickParam.DENOISE },
+                )
+            }
+            if (useImg2img) {
+                // Native edit models take a base image and any number of
+                // references through one entry; a menu picks which one to add.
+                Box {
+                    ParamChip(
+                        label = if (supportsReferenceEditing) {
+                            stringResource(R.string.flux_edit)
+                        } else {
+                            "img2img"
+                        },
+                        icon = Icons.Default.Image,
+                        onClick = {
+                            if (supportsReferenceEditing) {
+                                showReferenceEditMenu = true
+                            } else {
+                                onSelectImageClick()
+                            }
+                        },
+                    )
+                    DropdownMenu(
+                        expanded = showReferenceEditMenu,
+                        onDismissRequest = { showReferenceEditMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.flux_base_image)) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Image, contentDescription = null)
+                            },
+                            onClick = {
+                                showReferenceEditMenu = false
+                                onSelectImageClick()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(stringResource(R.string.flux_reference_images))
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.AddPhotoAlternate,
+                                    contentDescription = null,
+                                )
+                            },
+                            enabled = !editReferencesLoading,
+                            onClick = {
+                                showReferenceEditMenu = false
+                                onAddEditReferencesClick()
+                            },
+                        )
+                    }
+                }
+            }
+            ParamChip(
+                label = "",
+                icon = Icons.Default.BookmarkBorder,
+                contentDescription = stringResource(R.string.prompt_templates),
+                onClick = { showPromptTemplates = true },
+            )
+            ParamChip(
+                label = stringResource(R.string.chip_more),
+                icon = Icons.Default.Tune,
+                onClick = { showAdvancedSettings = true },
+            )
+        }
+    }
+
+    // One dialog per chip, each reusing the Advanced settings section for
+    // that parameter.
+    @Composable
+    fun QuickParamDialogs() {
+        val kind = quickParam ?: return
+        val close = { quickParam = null }
+        when (kind) {
+            QuickParam.STEPS -> QuickParamDialog(stringResource(R.string.quick_steps), close) {
+                ParamSlider(
+                    label = stringResource(R.string.steps, steps.roundToInt()),
+                    value = steps,
+                    onValueChange = onStepsChange,
+                    valueRange = GenerationDefaults.STEPS_MIN..GenerationDefaults.STEPS_MAX,
+                    step = 1f,
+                )
+            }
+
+            QuickParam.GUIDANCE -> QuickParamDialog(stringResource(R.string.quick_guidance), close) {
+                GuidanceSliders(
+                    cfg = cfg,
+                    cfgRescale = cfgRescale,
+                    cfgCutoff = cfgCutoff,
+                    onCfgChange = onCfgChange,
+                    onCfgRescaleChange = { value ->
+                        cfgRescale = value
+                        saveGuidanceParams()
+                    },
+                    onCfgCutoffChange = { value ->
+                        cfgCutoff = value
+                        saveGuidanceParams()
+                    },
+                )
+            }
+
+            QuickParam.SAMPLER -> QuickParamDialog(stringResource(R.string.scheduler), close) {
+                SchedulerPicker(scheduler) { value ->
+                    scheduler = value
+                    saveAllFields()
+                }
+            }
+
+            QuickParam.SIZE -> QuickParamDialog(stringResource(R.string.quick_size), close) {
+                when {
+                    model?.isDit == true -> DitSizePicker(
+                        currentWidth,
+                        currentHeight,
+                        isRunning,
+                        onDitWidthChange,
+                        onDitHeightChange,
+                    )
+
+                    model?.usesFixedCanvas == true -> AspectRatioPicker(
+                        aspectRatio = aspectRatio,
+                        isRunning = isRunning,
+                        onAspectRatioSelected = { ratio ->
+                            if (!isRunning && aspectRatio != ratio) {
+                                aspectRatio = ratio
+                                clearImg2imgState()
+                                saveAllFields()
+                            }
+                        },
+                        onCustomAspectRatioClick = {
+                            if (!isRunning) showCustomAspectRatioDialog = true
+                        },
+                    )
+
+                    model?.runOnCpu == true -> CpuSizeSlider(currentWidth, currentHeight, onSizeChange)
+
+                    else -> ResolutionPicker(
+                        availableResolutions = availableResolutions,
+                        currentWidth = currentWidth,
+                        currentHeight = currentHeight,
+                        isRunning = isRunning,
+                        onResolutionSelected = { resolution ->
+                            if (!isRunning &&
+                                (resolution.width != currentWidth || resolution.height != currentHeight)
+                            ) {
+                                pendingResolution = resolution
+                                showResolutionChangeDialog = true
+                            }
+                        },
+                    )
+                }
+            }
+
+            QuickParam.SEED -> QuickParamDialog(stringResource(R.string.quick_seed), close) {
+                SeedInput(
+                    seed = seed,
+                    returnedSeed = returnedSeed,
+                    onSeedChange = onSeedChange,
+                    onUseLastSeed = {
+                        seed = returnedSeed.toString()
+                        saveAllFields()
+                    },
+                )
+            }
+
+            QuickParam.BATCH -> QuickParamDialog(stringResource(R.string.quick_batch), close) {
+                BatchCountSlider(batchCounts, onBatchCountsChange)
+                if (seed.isNotBlank()) {
+                    Text(
+                        stringResource(R.string.batch_fixed_seed_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            QuickParam.DENOISE -> QuickParamDialog(stringResource(R.string.quick_denoise), close) {
+                DenoiseSlider(denoiseStrength, onDenoiseStrengthChange)
+            }
+        }
+    }
+
+    @Composable
+    fun PromptPage() {
+        // While typing, the focused field takes the room; at rest the prompt
+        // does and the negative prompt is a single line.
+        val negativeFills = typingMode && negativePromptField.isFocused
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // Ends the page above the keyboard, so the suggestion strip
+                // docks right on top of it.
+                .imePadding(),
+        ) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                val verticalPadding = 8.dp
+                FillColumn(
+                    fillIndex = if (negativeFills) 1 else 0,
+                    viewportHeight = maxHeight - verticalPadding * 2,
+                    minFillHeight = 120.dp,
+                    spacing = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = verticalPadding),
+                ) {
+                    ControlledPromptTagTextField(
+                        controller = promptField,
+                        fill = !negativeFills,
+                        lines = 1,
+                        label = {
+                            PromptCountLabel(
+                                label = stringResource(R.string.image_prompt),
+                                count = promptField.tokenCount,
+                                max = promptField.tokenMax,
+                                showCount = promptField.text.isNotEmpty(),
+                            )
+                        },
+                    )
+                    ControlledPromptTagTextField(
+                        controller = negativePromptField,
+                        fill = negativeFills,
+                        // A focused negative prompt without the on-screen
+                        // keyboard (hardware keyboard, keyboard dismissed)
+                        // opens up a little so it can still be read.
+                        lines = if (negativePromptField.isFocused) 4 else 1,
+                        label = {
+                            PromptCountLabel(
+                                label = stringResource(R.string.negative_prompt),
+                                count = negativePromptField.tokenCount,
+                                max = negativePromptField.tokenMax,
+                                showCount = negativePromptField.text.isNotEmpty(),
+                            )
+                        },
+                    )
+                    if (!typingMode) {
+                        ImageInputsRow()
+                        ParamChips()
+                        ExpandingVisibility(visible = errorMessage != null) {
+                            errorMessage?.let { msg ->
+                                Card(
+                                    onClick = { errorMessage = null },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Error,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                        Text(
+                                            msg,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        ExpandingVisibility(visible = generationQueue.isNotEmpty()) {
+                            GenerationQueueCard(
+                                jobs = generationQueue.toList(),
+                                canStart = !runnerActive && !isRunning && !isUpscaling &&
+                                    !serviceBusy,
+                                onStart = { startGenerationRunner(includeLiveBatch = false) },
+                                onRemove = { job ->
+                                    generationQueue.remove(job)
+                                    job.xyCell?.let { cell ->
+                                        xyPlots[cell.plotId]?.let { plot ->
+                                            plot.failed++
+                                            if (plot.isDone) xyPlots.remove(cell.plotId)
+                                        }
+                                    }
+                                },
+                                onClear = {
+                                    generationQueue.clear()
+                                    xyPlots.clear()
+                                },
+                            )
+                        }
+                        ExpandingVisibility(visible = isRunning) {
+                            GenerationProgressSlot(
+                                progress = { progress },
+                                preview = intermediateBitmap,
+                                aspectRatio = intermediateBitmap
+                                    ?.let { it.width.toFloat() / it.height }
+                                    ?: (currentWidth.toFloat() / currentHeight.coerceAtLeast(1)),
+                                maximized = previewMaximized,
+                                // Leaves the prompt and chips in view above it.
+                                maxPreviewHeight = maxHeight * 0.55f,
+                                onToggleMaximized = { previewMaximized = !previewMaximized },
+                                batchIndex = currentBatchIndex,
+                                batchTotal = currentBatchTotal,
+                                queuedCount = generationQueue.sumOf { it.count },
+                                startTime = generationStartTime,
+                                onPreviewClick = { showLivePreview = true },
+                                onStop = { showInterruptDialog = true },
+                            )
+                        }
+                    }
+                }
+            }
+            val generateEnabled = !serviceBusy &&
+                !isRunning && !runnerActive && !isUpscaling && !isUltrafixPreparing &&
+                (selectedImageUri == null || base64EncodeDone)
+            val startGenerate = {
+                focusManager.clearFocus()
+                Log.d("ModelRunScreen", "start generation")
+                startGenerationRunner(includeLiveBatch = true)
+            }
+            if (typingMode) {
+                ControlledSuggestionDock(
+                    controller = if (negativePromptField.isFocused) negativePromptField else promptField,
+                    autocompleteAvailable = tagAutocompleteAvailable,
+                    progress = if (isRunning) ({ progress }) else null,
+                ) {
+                    FilledIconButton(
+                        onClick = startGenerate,
+                        enabled = generateEnabled,
+                        modifier = Modifier.padding(start = 2.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = stringResource(R.string.generate_image),
+                        )
+                    }
+                }
+            } else {
+                GenerationDock(
+                    generateEnabled = generateEnabled,
+                    extrasEnabled = !isUpscaling && !isUltrafixPreparing &&
+                        (selectedImageUri == null || base64EncodeDone),
+                    isLoading = serviceBusy || isUpscaling,
+                    onGenerate = startGenerate,
+                    onAddToQueue = {
+                        focusManager.clearFocus()
+                        val count = if (seed.isNotBlank()) 1 else batchCounts
+                        generationQueue += snapshotJob(count)
+                        Toast.makeText(context, msgQueueAdded, Toast.LENGTH_SHORT).show()
+                    },
+                    onXyPlot = {
+                        focusManager.clearFocus()
+                        showXyPlotDialog = true
+                    },
+                )
+            }
+        }
+
+        QuickParamDialogs()
+        if (showXyPlotDialog) {
+            XyPlotDialog(
+                useImg2img = selectedImageUri != null,
+                baseCfg = cfg,
+                defaults = XyPickerDefaults(
+                    steps = steps,
+                    cfg = cfg,
+                    denoise = denoiseStrength,
+                    cfgRescale = cfgRescale,
+                    skipShare = 1f - cfgCutoff,
+                    currentSeed = seed.toLongOrNull() ?: returnedSeed,
+                ),
+                initialX = xyLastX,
+                initialXValues = xyLastXValues,
+                initialY = xyLastY,
+                initialYValues = xyLastYValues,
+                onStart = { x, y, xRaw, yRaw ->
+                    xyLastX = x.type
+                    xyLastXValues = xRaw
+                    xyLastY = y.type
+                    xyLastYValues = yRaw
+                    showXyPlotDialog = false
+                    enqueueXyPlot(x, y)
+                    if (!runnerActive && !isRunning) startGenerationRunner(includeLiveBatch = false)
+                },
+                onDismiss = { showXyPlotDialog = false },
+            )
+        }
+        if (showPromptTemplates) {
+            PromptTemplatesDialog(
+                templates = promptTemplates,
+                canSaveCurrent = promptField.text.isNotBlank() ||
+                    negativePromptField.text.isNotBlank(),
+                onApply = { template ->
+                    promptField.replaceText(template.prompt)
+                    if (template.negativePrompt.isNotBlank()) {
+                        negativePromptField.replaceText(template.negativePrompt)
+                    }
+                    saveAllFields()
+                    showPromptTemplates = false
+                },
+                onAppend = { template ->
+                    promptField.replaceText(
+                        PromptTemplate.appendTo(promptField.text, template.prompt),
+                    )
+                    negativePromptField.replaceText(
+                        PromptTemplate.appendTo(
+                            negativePromptField.text,
+                            template.negativePrompt,
+                        ),
+                    )
+                    saveAllFields()
+                    showPromptTemplates = false
+                },
+                onDelete = { template ->
+                    scope.launch(Dispatchers.IO) {
+                        generationPreferences.savePromptTemplates(
+                            promptTemplates.filterNot { it.name == template.name },
+                        )
+                    }
+                },
+                onSaveCurrent = { name ->
+                    val template = PromptTemplate(
+                        name = name,
+                        prompt = promptField.text,
+                        negativePrompt = negativePromptField.text,
+                    )
+                    scope.launch(Dispatchers.IO) {
+                        generationPreferences.savePromptTemplates(
+                            promptTemplates.filterNot { it.name == name } + template,
+                        )
+                    }
+                },
+                onDismiss = { showPromptTemplates = false },
+            )
+        }
+        if (showAdvancedSettings) {
+            AdvancedSettingsDialog(
+                isSdxl = model?.usesFixedCanvas == true,
+                isDit = model?.isDit == true,
+                onDitWidthChange = onDitWidthChange,
+                onDitHeightChange = onDitHeightChange,
+                runOnCpu = model?.runOnCpu ?: false,
+                useImg2img = useImg2img,
+                isRunning = isRunning,
+                aspectRatio = aspectRatio,
+                availableResolutions = availableResolutions,
+                currentWidth = currentWidth,
+                currentHeight = currentHeight,
+                scheduler = scheduler,
+                steps = steps,
+                cfg = cfg,
+                useOpenCL = useOpenCL,
+                batchCounts = batchCounts,
+                denoiseStrength = denoiseStrength,
+                cfgRescale = cfgRescale,
+                cfgCutoff = cfgCutoff,
+                seed = seed,
+                returnedSeed = returnedSeed,
+                onAspectRatioSelected = { ratio ->
+                    if (!isRunning && aspectRatio != ratio) {
+                        aspectRatio = ratio
+                        clearImg2imgState()
+                        saveAllFields()
+                    }
+                },
+                onCustomAspectRatioClick = {
+                    if (!isRunning) {
+                        showCustomAspectRatioDialog = true
+                    }
+                },
+                onResolutionSelected = { resolution ->
+                    if (!isRunning &&
+                        (
+                            resolution.width != currentWidth ||
+                                resolution.height != currentHeight
+                            )
+                    ) {
+                        pendingResolution = resolution
+                        showResolutionChangeDialog = true
+                    }
+                },
+                onSchedulerChange = { value ->
+                    scheduler = value
+                    saveAllFields()
+                },
+                onStepsChange = onStepsChange,
+                onCfgChange = onCfgChange,
+                onSizeChange = onSizeChange,
+                onCpuSelected = {
+                    useOpenCL = false
+                    saveAllFields()
+                },
+                onGpuSelected = { showOpenCLWarningDialog = true },
+                onBatchCountsChange = onBatchCountsChange,
+                onDenoiseStrengthChange = onDenoiseStrengthChange,
+                onCfgRescaleChange = { value ->
+                    cfgRescale = value
+                    saveGuidanceParams()
+                },
+                onCfgCutoffChange = { value ->
+                    cfgCutoff = value
+                    saveGuidanceParams()
+                },
+                onSeedChange = onSeedChange,
+                onUseLastSeed = {
+                    seed = returnedSeed.toString()
+                    saveAllFields()
+                },
+                onImportFromClipboard = {
+                    val clipboard =
+                        context.getSystemService(
+                            Context.CLIPBOARD_SERVICE,
+                        ) as? ClipboardManager
+                    val raw = clipboard?.primaryClip
+                        ?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)
+                        ?.coerceToText(context)
+                        ?.toString()
+                    val imported = ParamShare.tryDecode(raw)
+                    if (imported != null) {
+                        pendingImport = imported
+                        clipboardImportChecked = true
+                    } else {
+                        Toast.makeText(
+                            context,
+                            msgImportNoParams,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                onShare = {
+                    val currentMode = when {
+                        supportsReferenceEditing && (selectedImageUri != null || editReferenceImages.isNotEmpty()) ->
+                            GenerationMode.EDIT
+
+                        isInpaintMode -> GenerationMode.INPAINT
+
+                        selectedImageUri != null -> GenerationMode.IMG2IMG
+
+                        else -> GenerationMode.TXT2IMG
+                    }
+                    shareSourceParams = GenerationParameters(
+                        steps = steps.toInt(),
+                        cfg = cfg,
+                        seed = seed.toLongOrNull(),
+                        prompt = promptField.text,
+                        negativePrompt = negativePromptField.text,
+                        generationTime = null,
+                        width = currentWidth,
+                        height = currentHeight,
+                        runOnCpu = model?.runOnCpu ?: false,
+                        denoiseStrength = denoiseStrength,
+                        useOpenCL = useOpenCL,
+                        scheduler = scheduler,
+                        mode = currentMode,
+                    )
+                    shareSourceModelId = modelId
+                },
+                onReset = { showResetConfirmDialog = true },
+                onDismiss = { showAdvancedSettings = false },
+            )
         }
     }
 
@@ -2776,78 +3144,93 @@ fun ModelRunScreen(
         Scaffold(
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
-                LargeTopAppBar(
-                    title = {
-                        // Hide title when collapsed
-                        if (scrollBehavior.state.collapsedFraction < 0.5f) {
-                            Column {
-                                Text(
-                                    text = model?.name ?: "Running Model",
-                                    fontWeight = FontWeight.Normal,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                )
-                                Text(
-                                    text = model?.description ?: "",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            if (isRunning) {
-                                showInterruptDialog = true
-                            } else {
-                                handleExit()
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.back),
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    scrollBehavior = scrollBehavior,
-                    actions = {
-                        Row {
-                            val tabs = listOf(
-                                stringResource(R.string.prompt_tab),
-                                stringResource(R.string.result_tab),
-                                stringResource(R.string.history_tab),
-                            )
-                            tabs.forEachIndexed { index, label ->
-                                val selected = pagerState.currentPage == index
-                                TextButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            focusManager.clearFocus()
-                                            pagerState.animateScrollToPage(index)
-                                        }
-                                    },
-                                    colors = ButtonDefaults.textButtonColors(
-                                        contentColor = if (selected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    ),
-                                ) {
-                                    Text(label)
+                // The status bar inset sits outside the collapsible part, so
+                // hiding the bar while typing never slides content under it.
+                Column(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                        .statusBarsPadding(),
+                ) {
+                    AnimatedVisibility(
+                        visible = !typingMode,
+                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                    ) {
+                        LargeTopAppBar(
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            title = {
+                                // Hide title when collapsed
+                                if (scrollBehavior.state.collapsedFraction < 0.5f) {
+                                    Column {
+                                        Text(
+                                            text = model?.name ?: "Running Model",
+                                            fontWeight = FontWeight.Normal,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        )
+                                        Text(
+                                            text = model?.description ?: "",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        )
+                                    }
                                 }
-                            }
-                        }
-                    },
-                )
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = {
+                                    if (isRunning) {
+                                        showInterruptDialog = true
+                                    } else {
+                                        handleExit()
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = stringResource(R.string.back),
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                            scrollBehavior = scrollBehavior,
+                            actions = {
+                                Row {
+                                    val tabs = listOf(
+                                        stringResource(R.string.prompt_tab),
+                                        stringResource(R.string.result_tab),
+                                        stringResource(R.string.history_tab),
+                                    )
+                                    tabs.forEachIndexed { index, label ->
+                                        val selected = pagerState.currentPage == index
+                                        TextButton(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    focusManager.clearFocus()
+                                                    pagerState.animateScrollToPage(index)
+                                                }
+                                            },
+                                            colors = ButtonDefaults.textButtonColors(
+                                                contentColor = if (selected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                            ),
+                                        ) {
+                                            Text(label)
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
             },
         ) { paddingValues ->
             if (model == null && isRemote && !isCheckingBackend) {
@@ -3186,6 +3569,28 @@ fun ModelRunScreen(
         )
     }
 
+    // Full-size view of the live preview from the progress slot; closes by
+    // itself once the run ends.
+    if (showLivePreview) {
+        // Read only while open: the preview changes every step.
+        intermediateBitmap?.let { livePreview ->
+            ZoomableImageOverlay(
+                bitmap = livePreview,
+                onDismiss = { showLivePreview = false },
+                topEndContent = {
+                    OverlayIconButton(
+                        icon = Icons.Default.Close,
+                        contentDescription = "close preview",
+                        onClick = { showLivePreview = false },
+                    )
+                },
+            )
+        }
+    }
+    LaunchedEffect(isRunning) {
+        if (!isRunning) showLivePreview = false
+    }
+
     // Import-and-resize a local image for UltraFix. A confirmed image that
     // already satisfies the UltraFix window goes straight to the parameter
     // dialog; a smaller one just lands on the result page, where the visible
@@ -3239,11 +3644,8 @@ fun ModelRunScreen(
                     // tightens the denoise-step cap below.
                     val denoiseStepsMax =
                         minOf(GenerationDefaults.ULTRAFIX_DENOISE_STEPS_MAX, ultrafixSteps.roundToInt())
-                    Text(
-                        stringResource(R.string.steps, ultrafixSteps.roundToInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.steps, ultrafixSteps.roundToInt()),
                         value = ultrafixSteps,
                         onValueChange = {
                             ultrafixSteps = it
@@ -3253,25 +3655,20 @@ fun ModelRunScreen(
                             saveUltrafixParams()
                         },
                         valueRange = GenerationDefaults.ULTRAFIX_STEPS_MIN..GenerationDefaults.ULTRAFIX_STEPS_MAX,
-                        steps = 18,
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Independent UltraFix denoise steps (0..min(10, steps)):
                     // how many of the total steps actually denoise.
-                    Text(
-                        stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
+                    ParamSlider(
+                        label = stringResource(R.string.ultrafix_denoise_steps_label, ultrafixDenoiseSteps),
                         value = ultrafixDenoiseSteps.toFloat(),
                         onValueChange = {
                             ultrafixDenoiseSteps = it.roundToInt()
                             saveUltrafixParams()
                         },
                         valueRange = 0f..denoiseStepsMax.toFloat(),
-                        steps = (denoiseStepsMax - 1).coerceAtLeast(0),
-                        modifier = Modifier.fillMaxWidth(),
+                        step = 1f,
                     )
 
                     // Quality-denoise toggle: run UltraFix on neutral quality
@@ -4021,3 +4418,6 @@ private fun PromptCountLabel(label: String, count: Int, max: Int, showCount: Boo
         }
     }
 }
+
+/** Prompt-page chips that open a quick-edit dialog. */
+private enum class QuickParam { STEPS, GUIDANCE, SAMPLER, SIZE, SEED, BATCH, DENOISE }

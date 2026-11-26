@@ -76,6 +76,10 @@ android {
         }
         debug {
             signingConfig = signingConfigs.getByName("release")
+            // Own package and name so a test build installs next to the regular
+            // app instead of replacing it (and keeps that app's data intact).
+            applicationIdSuffix = ".mods"
+            versionNameSuffix = "-mods"
         }
     }
     compileOptions {
@@ -95,14 +99,13 @@ android {
         }
     }
     flavorDimensions += "version"
+    // This fork ships only the unfiltered build; the upstream "filter" flavor
+    // (bundled NSFW safety checker) was dropped. BuildConfig.FLAVOR checks for
+    // "filter" in the app code are therefore always false.
     productFlavors {
         create("basic") {
             dimension = "version"
             versionNameSuffix = ""
-        }
-        create("filter") {
-            dimension = "version"
-            versionNameSuffix = "_with_filter"
         }
     }
 }
